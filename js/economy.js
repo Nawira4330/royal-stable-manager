@@ -55,10 +55,35 @@ const Economy = (function () {
     return FACILITIES[key].levels[state.facilities[key] || 0];
   }
   function stallCapacity(state) { return facLevel(state, 'stalls').cap; }
+
+  // --- Fütterung: Kosten je Pferd/Woche + Wirkung auf Energie, Training,
+  //     Fruchtbarkeit, Fohlengesundheit und leichte Gesundheits-Regeneration.
+  const FEED = [
+    { label: 'Sparration', desc: 'nur Heu', cost: 35,
+      energyRegen: 12, trainMult: 0.9, fertMult: 0.95, foalHealth: -2, healthRegen: 0 },
+    { label: 'Standard', desc: 'Heu + Hafer', cost: 62,
+      energyRegen: 16, trainMult: 1.0, fertMult: 1.0, foalHealth: 0, healthRegen: 0.3 },
+    { label: 'Premium', desc: 'Heu, Hafer, Mineralfutter, Zusatzfutter', cost: 112,
+      energyRegen: 20, trainMult: 1.12, fertMult: 1.08, foalHealth: 3, healthRegen: 0.8 },
+  ];
+  // --- Pflege / Stallmanagement: senkt Krankheits-/Verletzungsrisiko, bringt
+  //     Turnier-Bonus (Ausstrahlung), bremst Altersverschleiß, hebt langsam
+  //     das Interieur.
+  const CARE = [
+    { label: 'Minimal', desc: 'nötigstes Ausmisten', cost: 18,
+      eventMult: 1.35, showBonus: -3, ageHealthMult: 1.3, interieurDrift: 0 },
+    { label: 'Solide', desc: 'tägl. Pflege, regelm. Hufschmied', cost: 38,
+      eventMult: 1.0, showBonus: 0, ageHealthMult: 1.0, interieurDrift: 0 },
+    { label: 'Intensiv', desc: 'Vollpflege, Physio, Koppelgang', cost: 82,
+      eventMult: 0.65, showBonus: 5, ageHealthMult: 0.6, interieurDrift: 0.05 },
+  ];
+  function feedDef(state) { return FEED[state.feedLevel != null ? state.feedLevel : 1]; }
+  function careDef(state) { return CARE[state.careLevel != null ? state.careLevel : 1]; }
+
   function weeklyUpkeep(state) {
     let u = 0;
     Object.keys(FACILITIES).forEach((k) => { u += facLevel(state, k).upkeep; });
-    u += state.horses.length * 95; // Futter/Pflege je Pferd
+    u += state.horses.length * (feedDef(state).cost + careDef(state).cost);
     return u;
   }
 
@@ -257,9 +282,10 @@ const Economy = (function () {
   // Führt eine Schau aus: Spielerpferde + KI-Feld, Platzierung, Preisgeld.
   function runShow(state, show) {
     const field = [];
+    const careShow = careDef(state).showBonus;   // Ausstrahlung durch Pflege
     show.entered.forEach((id) => {
       const h = state.horses.find((x) => x.id === id);
-      if (h) field.push({ id: id, name: h.name, player: true, score: scoreHorse(h, show, state.week) });
+      if (h) field.push({ id: id, name: h.name, player: true, score: scoreHorse(h, show, state.week) + careShow });
     });
     const aiCount = 7 + show.level;
     for (let i = 0; i < aiCount; i++) {
@@ -308,6 +334,10 @@ const Economy = (function () {
 
   return {
     FACILITIES: FACILITIES,
+    FEED: FEED,
+    CARE: CARE,
+    feedDef: feedDef,
+    careDef: careDef,
     facLevel: facLevel,
     stallCapacity: stallCapacity,
     weeklyUpkeep: weeklyUpkeep,

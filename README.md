@@ -29,13 +29,19 @@ npm run dist            # NSIS-Installer + portable EXE nach dist/
 npm run dist:portable   # nur portable EXE
 ```
 
+Im Spiel erklärt der Knopf **„❔ Anleitung"** (oben) bzw. **„How to Play"**
+auf dem Startbildschirm alle Regeln.
+
 ## Spielprinzip
 
 - **🏡 Gestüt** – Kasse, Prestige/Rang, Anlagen ausbauen (Stallplätze,
-  Trainingsanlage, Tierarzt/Reproduktion, Vermarktung), Chronik.
+  Trainingsanlage, Tierarzt/Reproduktion, Vermarktung), **Futter & Pflege**
+  (je 3 Stufen: mehr Kosten je Pferd/Woche, dafür mehr Energie/Training/
+  Fruchtbarkeit bzw. weniger Krankheiten, Turnier-Bonus, langsamerer
+  Altersverschleiß), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
-  vs. Potenzial), Exterieur, Interieur, Gesundheit, Energie. Trainings-Fokus
-  setzen, verkaufen, in die Auktion geben.
+  vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
+  Gesundheit, Energie. Trainings-Fokus setzen, verkaufen, in die Auktion geben.
 - **🧬 Zucht** – eigener Hengst **oder Deckstation** (fremde Hengste gegen
   Deckgeld). Die Vorschau zeigt die erwarteten Fohlenwerte, den Streubereich,
   COI, Empfängnischance, mögliche Fohlenfarben und ob der Hengst die

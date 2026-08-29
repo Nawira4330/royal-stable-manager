@@ -180,7 +180,15 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
   display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50;
 }
 .overlay .box { background: var(--surface); border-radius: var(--radius); padding: 1.6rem; max-width: 440px; width: 100%; }
+.overlay .box.wide { max-width: 800px; }
 .overlay .box h1 { font-size: 1.9rem; color: var(--accent); }
+
+.howto-body { max-height: 70vh; overflow-y: auto; padding-right: .5rem; }
+.howto-body h3 { margin: 1.15rem 0 .25rem; font-size: 1.05rem; }
+.howto-body h3:first-child { margin-top: .2rem; }
+.howto-body p { margin: .35rem 0; font-size: .92rem; }
+.howto-body ul { margin: .3rem 0 .4rem 1.15rem; font-size: .92rem; }
+.howto-body li { margin: .22rem 0; }
 
 .foal-forecast li { margin: .15rem 0; }
 .bid-input { width: 8rem; }

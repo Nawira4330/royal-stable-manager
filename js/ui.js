@@ -150,6 +150,19 @@ const UI = (function () {
         </div>
       </div>
 
+      <div class="card" style="margin-top:1rem">
+        <h3>🥕 Futter &amp; Pflege</h3>
+        <p class="small muted">Gilt für den ganzen Bestand. Umstellen ist sofort und kostenlos — es ändert nur die laufenden Kosten je Pferd/Woche.</p>
+        <div class="grid cols-2">
+          ${feedCareBlock('feed', 'Fütterung', Economy.FEED, s.feedLevel != null ? s.feedLevel : 1)}
+          ${feedCareBlock('care', 'Pflege / Stallmanagement', Economy.CARE, s.careLevel != null ? s.careLevel : 1)}
+        </div>
+        <div class="row between small" style="margin-top:.6rem">
+          <span>Kosten je Pferd/Woche</span>
+          <b>${fmt(Economy.feedDef(s).cost + Economy.careDef(s).cost)} × ${s.horses.length} Pferde = ${fmt((Economy.feedDef(s).cost + Economy.careDef(s).cost) * s.horses.length)}/Wo.</b>
+        </div>
+      </div>
+
       <div class="grid cols-2" style="margin-top:1rem">
         <div class="card">
           <h3>Bestand (Kurzübersicht)</h3>
@@ -161,6 +174,32 @@ const UI = (function () {
         </div>
       </div>`;
   };
+
+  // Ein Auswahl-Block für Fütterung bzw. Pflege.
+  function feedCareBlock(kind, title, list, level) {
+    const cur = list[level];
+    const opts = list.map((l, i) =>
+      '<option value="' + i + '"' + (i === level ? ' selected' : '') + '>' + esc(l.label) + ' — ' + fmt(l.cost) + '/Pferd</option>'
+    ).join('');
+    let fx;
+    if (kind === 'feed') {
+      fx = 'Energie/Wo. +' + cur.energyRegen + ' · Training ×' + cur.trainMult.toFixed(2) +
+        ' · Fruchtbarkeit ×' + cur.fertMult.toFixed(2) + ' · Fohlengesundheit ' + (cur.foalHealth >= 0 ? '+' : '') + cur.foalHealth +
+        (cur.healthRegen ? ' · Gesundheit +' + cur.healthRegen + '/Wo.' : '');
+    } else {
+      fx = 'Krankheitsrisiko ×' + cur.eventMult.toFixed(2) + ' · Turnier ' + (cur.showBonus >= 0 ? '+' : '') + cur.showBonus +
+        ' · Altersverschleiß ×' + cur.ageHealthMult.toFixed(2) +
+        (cur.interieurDrift ? ' · Interieur wächst langsam' : '');
+    }
+    return `<div class="card" style="background:var(--surface-2)">
+      <div class="row between"><b>${esc(title)}</b><span class="tag">${fmt(cur.cost)}/Pferd/Wo.</span></div>
+      <div class="small muted">${esc(cur.desc)}</div>
+      <label class="small" style="margin-top:.4rem;display:block">Stufe wählen
+        <select data-action="set-${kind}">${opts}</select>
+      </label>
+      <div class="small" style="margin-top:.35rem">${esc(fx)}</div>
+    </div>`;
+  }
 
   function herdMiniTable() {
     const s = Game.state;
@@ -599,6 +638,9 @@ const UI = (function () {
     $('#btn-save').addEventListener('click', () => { Game.save(); toast('Gespeichert.'); });
     $('#btn-menu').addEventListener('click', () => { $('#menu-overlay').hidden = false; });
     $('#btn-menu-close').addEventListener('click', () => { $('#menu-overlay').hidden = true; });
+    $('#btn-howto').addEventListener('click', () => { $('#howto-overlay').hidden = false; });
+    $('#btn-howto-close').addEventListener('click', () => { $('#howto-overlay').hidden = true; });
+    $('#howto-overlay').addEventListener('click', (e) => { if (e.target.id === 'howto-overlay') $('#howto-overlay').hidden = true; });
     $('#btn-export').addEventListener('click', () => {
       const t = $('#export-text'); t.hidden = false; t.value = Game.exportSave(); t.select();
     });
@@ -618,7 +660,9 @@ const UI = (function () {
     if (t.dataset.action === 'set-focus') {
       Game.setTrainingFocus(t.dataset.id, t.value);
       toast(t.value ? 'Trainings-Fokus: ' + t.value : 'Fokus entfernt.');
-    } else if (t.dataset.action === 'pick-sire') { breedSire = t.value || null; render(); }
+    } else if (t.dataset.action === 'set-feed') { Game.setFeed(parseInt(t.value, 10)); toast('Fütterung: ' + Economy.FEED[Game.state.feedLevel].label); }
+    else if (t.dataset.action === 'set-care') { Game.setCare(parseInt(t.value, 10)); toast('Pflege: ' + Economy.CARE[Game.state.careLevel].label); }
+    else if (t.dataset.action === 'pick-sire') { breedSire = t.value || null; render(); }
     else if (t.dataset.action === 'pick-dam') { breedDam = t.value || null; render(); }
   }
 
@@ -731,6 +775,7 @@ const UI = (function () {
         $('#start-overlay').hidden = true; showTab('gestüt');
       } catch (err) { toast('Import fehlgeschlagen: ' + err.message, true); }
     });
+    $('#btn-howto-start').addEventListener('click', () => { $('#howto-overlay').hidden = false; });
   }
 
   function init() {

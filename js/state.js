@@ -22,12 +22,14 @@ const Game = (function () {
   // --- Neues Spiel.
   function newGame(studName) {
     state = {
-      version: 2,
+      version: 3,
       studName: studName || Names.randStudName(),
       week: 0,
       cash: 60000,
       prestige: 0,
       facilities: { stalls: 0, arena: 0, vet: 0, marketing: 0 },
+      feedLevel: 1,       // Fütterung: 0 Spar / 1 Standard / 2 Premium
+      careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
       horses: [],
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
@@ -108,6 +110,9 @@ const Game = (function () {
   // --- Aktionen des Spielers ---------------------------------------------
 
   function setStudName(name) { state.studName = name || state.studName; save(); emit(); }
+
+  function setFeed(level) { state.feedLevel = clamp(level | 0, 0, Economy.FEED.length - 1); save(); emit(); }
+  function setCare(level) { state.careLevel = clamp(level | 0, 0, Economy.CARE.length - 1); save(); emit(); }
 
   function buyFacility(key) {
     const cur = state.facilities[key] || 0;
@@ -197,7 +202,7 @@ const Game = (function () {
     const fee = sr.fee;
     // Empfängnis-Wahrscheinlichkeit.
     const vet = Economy.facLevel(state, 'vet');
-    let chance = 0.72 * vet.fert;
+    let chance = 0.72 * vet.fert * Economy.feedDef(state).fertMult;
     chance *= clamp(1 - (dy - 12) * 0.05, 0.3, 1);        // Stutenalter
     chance *= clamp(dam.health / 90, 0.5, 1.05);
     chance *= clamp(1 - coi * 0.6, 0.4, 1);               // Inzucht senkt Fruchtbarkeit
@@ -300,20 +305,32 @@ const Game = (function () {
     const arena = Economy.facLevel(state, 'arena');
     const vet = Economy.facLevel(state, 'vet');
     const mkt = Economy.facLevel(state, 'marketing');
+    const feed = Economy.feedDef(state);
+    const care = Economy.careDef(state);
     state.week += 1;
 
     // 1) Alterung, Energie, Training, Gesundheit.
     const births = [];
     state.horses.forEach((h) => {
       const y = Model.ageYears(h, state.week);
-      // Energie
-      h.energy = clamp(h.energy + 16, 0, 100);
+      // Energie (abhängig von der Fütterung)
+      h.energy = clamp(h.energy + feed.energyRegen, 0, 100);
+      // Leichte Gesundheits-Regeneration durch gutes Futter
+      if (feed.healthRegen && h.health < 100 && h.health > 25) {
+        h.health = clamp(h.health + feed.healthRegen, 0, 100);
+      }
+      // Intensive Pflege hebt langsam eine Interieur-Einzelnote
+      if (care.interieurDrift && Math.random() < care.interieurDrift && h.interieur) {
+        const t = Model.INTERIEUR_TRAITS[Model.randInt(0, Model.INTERIEUR_TRAITS.length - 1)];
+        h.interieur[t] = clamp(h.interieur[t] + 1, 10, 99);
+        h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
+      }
       // Training
       if (h.trainingFocus && y >= Model.MATURITY_YEARS && h.energy > 22 && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
         const d = h.trainingFocus;
         const gap = h.potential[d] - h.skill[d];
         if (gap > 0.3) {
-          const rate = 0.9 * arena.mult
+          const rate = 0.9 * arena.mult * feed.trainMult
             * clamp(gap / 40, 0.15, 1)
             * clamp(h.temperament / 70, 0.5, 1.15)
             * Model.ageFactor(y)
@@ -322,8 +339,8 @@ const Game = (function () {
           h.energy = clamp(h.energy - 13, 0, 100);
         }
       }
-      // Altersbedingter Substanzverlust
-      if (y > 16) h.health = clamp(h.health - Model.gauss(0.4, 0.3), 0, 100);
+      // Altersbedingter Substanzverlust (durch gute Pflege gebremst)
+      if (y > 16) h.health = clamp(h.health - Model.gauss(0.4, 0.3) * care.ageHealthMult, 0, 100);
       if (y > 26 && Math.random() < 0.06) {
         log(h.name + ' ist im Alter von ' + y.toFixed(0) + ' Jahren friedlich eingeschlafen.', 'warn');
         h._dead = true;
@@ -355,7 +372,7 @@ const Game = (function () {
         return;
       }
       const foal = result.foal;
-      foal.health = clamp(foal.health + vet.foalHealth, 0, 100);
+      foal.health = clamp(foal.health + vet.foalHealth + feed.foalHealth, 0, 100);
       foal.name = Names.randName();
       state.stats.foalsBred += 1;
       if (Game.stallFree() >= 1) {
@@ -457,10 +474,12 @@ const Game = (function () {
     // 7) Zufallsereignisse (selten).
     maybeRandomEvent();
 
-    // 8) Unterhalt abziehen.
+    // 8) Unterhalt abziehen (Anlagen + Futter + Pflege je Pferd).
     const upkeep = Economy.weeklyUpkeep(state);
     state.cash -= upkeep;
-    log('Wochenunterhalt: -' + Economy.fmtEur(upkeep) + ' (' + state.horses.length + ' Pferde + Anlagen).', 'cost');
+    const perHorse = feed.cost + care.cost;
+    log('Wochenunterhalt: -' + Economy.fmtEur(upkeep) + ' (' + state.horses.length + ' Pferde × ' +
+      Economy.fmtEur(perHorse) + ' Futter/Pflege + Anlagen).', 'cost');
 
     // 9) Prestige-Zerfall + Bankrott-Warnung.
     state.prestige = Math.max(0, state.prestige - 0.5);
@@ -475,9 +494,12 @@ const Game = (function () {
 
   function maybeRandomEvent() {
     if (Math.random() > 0.35) return;
+    const care = Economy.careDef(state);
     const roll = Math.random();
     const horses = state.horses.filter((h) => !h.pregnancy);
-    if (roll < 0.3 && state.horses.length) {
+    // Krankheits-/Verletzungsrisiko: durch gute Pflege gesenkt, durch
+    // schlechte erhöht (care.eventMult).
+    if (roll < 0.3 * care.eventMult && state.horses.length) {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
       const bill = 300 + Model.randInt(0, 900);
       state.cash -= bill;
@@ -525,6 +547,8 @@ const Game = (function () {
     stallFree: stallFree,
     valuation: valuation,
     setStudName: setStudName,
+    setFeed: setFeed,
+    setCare: setCare,
     buyFacility: buyFacility,
     buyMarketHorse: buyMarketHorse,
     listForSale: listForSale,

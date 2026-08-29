@@ -18,6 +18,7 @@
     <span class="spacer"></span>
     <button id="btn-week">Woche weiter ▶</button>
     <button class="secondary" id="btn-save">Speichern</button>
+    <button class="secondary" id="btn-howto">❔ Anleitung</button>
     <button class="secondary" id="btn-menu">Menü</button>
   </header>
 
@@ -47,12 +48,123 @@
       <div class="row">
         <button id="btn-new">Neues Spiel</button>
         <button class="secondary" id="btn-continue" hidden>Weiterspielen</button>
+        <button class="secondary" id="btn-howto-start">❔ How to Play</button>
       </div>
       <details>
         <summary class="muted small">Spielstand importieren</summary>
         <textarea id="import-text" rows="4" style="width:100%;margin-top:.4rem" placeholder="JSON hier einfügen"></textarea>
         <button class="secondary small" id="btn-import" style="margin-top:.4rem">Importieren</button>
       </details>
+    </div>
+  </div>
+
+  <!-- How to Play -->
+  <div class="overlay" id="howto-overlay" hidden>
+    <div class="box wide stack" id="howto-box">
+      <div class="row between">
+        <h2 style="margin:0">❔ How to Play</h2>
+        <button class="secondary" id="btn-howto-close">Schließen</button>
+      </div>
+      <div class="howto-body">
+
+        <h3>Ziel</h3>
+        <p>Baue dein Gestüt aus, züchte immer bessere Pferde und halte die Kasse im Plus.
+        Erfolge auf Turnieren bringen <b>Preisgeld</b> und <b>Prestige</b> — mit dem Rang werden
+        Marktpferde, Auktionen und Deckhengste besser.</p>
+
+        <h3>„Woche weiter"</h3>
+        <p>Ein Klick lässt eine Woche vergehen. Dabei passiert alles auf einmal:</p>
+        <ul>
+          <li>Pferde <b>altern</b> und <b>trainieren</b> (entlang des gesetzten Fokus).</li>
+          <li>Fällige <b>Fohlen</b> kommen zur Welt.</li>
+          <li>Genannte Pferde <b>starten bei Turnieren</b>; alle 4 Wochen wird die <b>Auktion</b> zugeschlagen.</li>
+          <li><b>Markt</b> und <b>Deckstation</b> erneuern sich regelmäßig.</li>
+          <li><b>Wochenunterhalt</b> wird abgebucht, dazu evtl. ein <b>Zufallsereignis</b>
+            (Kolik, Kaufangebot, Sponsor …).</li>
+        </ul>
+
+        <h3>Kasse &amp; Unterhalt</h3>
+        <p>Jede Woche zahlst du: <b>Anlagen-Unterhalt</b> + <b>(Futter + Pflege) × Anzahl Pferde</b>.</p>
+        <ul>
+          <li><b>Anlagen</b> (Tab Gestüt): Stallplätze, Trainingsanlage, Tierarzt/Reproduktion, Vermarktung.
+            Ausbauen kostet einmalig und erhöht den laufenden Unterhalt.</li>
+          <li><b>Fütterung</b> (3 Stufen): bessere Ration → mehr Energie, schnelleres Training,
+            höhere Fruchtbarkeit, gesündere Fohlen.</li>
+          <li><b>Pflege</b> (3 Stufen): mehr Pflege → weniger Krankheiten/Verletzungen,
+            Turnier-Bonus (Ausstrahlung), langsamerer Altersverschleiß, langsam steigendes Interieur.</li>
+        </ul>
+        <p>Umstellen von Futter/Pflege ist sofort und kostenlos — es ändert nur die laufenden Kosten.</p>
+
+        <h3>Die Werte eines Pferdes</h3>
+        <ul>
+          <li><b>Begabungen</b> — 6 Disziplinen (Dressur, Springen, Galopprennen, Vielseitigkeit,
+            Distanzritt, Fahren). <b>Potenzial</b> = Obergrenze (angeboren), <b>Ausbildung</b> = aktueller
+            Stand (durch Training). Der helle Balken zeigt das Potenzial.</li>
+          <li><b>Exterieur</b> (Gebäude) — 6 Einzelnoten: Kopf &amp; Hals, Schulter, Rücken, Hinterhand,
+            Fundament, Bewegung.</li>
+          <li><b>Interieur</b> (Charakter) — 5 Einzelnoten: Nervenstärke, Leistungsbereitschaft,
+            Rittigkeit, Lernwille, Umgänglichkeit.</li>
+          <li><b>Gesundheit</b> — sinkt durch Verletzungen und im hohen Alter; gutes Futter regeneriert
+            sie leicht.</li>
+          <li><b>Energie</b> — Training verbraucht sie, jede Woche kommt sie zurück (je nach Futter).</li>
+          <li><b>Alter</b> — Fohlen &lt; 1 J., Jungpferd &lt; 3 J. Ab 3 Jahren: Training, Sport, Zucht.
+            Leistungshoch etwa 7–15 Jahre, danach Abbau.</li>
+        </ul>
+
+        <h3>Training</h3>
+        <p>Im Stall pro Pferd einen <b>Trainings-Fokus</b> wählen. Der Zuwachs pro Woche hängt ab von
+        Trainingsanlage, Fütterung, Interieur (Lernwille/Rittigkeit), Alter und Gesundheit — und stoppt
+        beim Potenzial.</p>
+
+        <h3>Zucht</h3>
+        <ul>
+          <li><b>Farbe</b> vererbt streng nach Mendel: pro Genort ein Allel von Vater und Mutter.
+            Homozygotes Frame Overo oder Roan → Fohlen nicht lebensfähig.</li>
+          <li><b>Werte</b>: Erwartung ≈ Ø(Hengst, Stute) − Inzucht-Abzug − Mix-Abzug, plus etwas
+            Streuung. <b>Jede Einzelnote getrennt</b> — eine im Rücken schwache Stute an einem im Rücken
+            starken Hengst gibt ein Fohlen, das im Rücken dazwischen liegt.</li>
+          <li><b>COI</b> (Inzuchtkoeffizient): je höher, desto stärker sinken Begabungen, Exterieur,
+            Interieur und vor allem Gesundheit — und die Empfängnischance.</li>
+          <li><b>Deckstation</b>: fremde Hengste gegen Deckgeld, auch ohne eigenen Spitzenhengst.</li>
+          <li><b>Mix</b> (Vater- und Mutterrasse verschieden): kein Zuchtbuch → halber Marktwert,
+            Zuchtschau-Malus, Werte im Schnitt etwas niedriger.</li>
+          <li><b>Passung</b> (0–100): wie gut ein Hengst die <i>schwachen</i> Noten der gewählten Stute
+            hebt, ohne ihre <i>starken</i> zu verlieren. Bei gewählter Stute sortiert sich die
+            Deckstation danach.</li>
+          <li>Tragezeit 48 Wochen. Stuten von etwa 3 bis 18–20 Jahren.</li>
+        </ul>
+
+        <h3>Schauen</h3>
+        <ul>
+          <li><b>Sport-Turniere</b> (je Disziplin): bewertet vor allem die Ausbildung.</li>
+          <li><b>Zuchtschauen</b>: bewertet Exterieur, Rassetyp und Abstammung.</li>
+          <li>Pferd nennen (Nenngeld), es startet beim nächsten Wochenwechsel. Platzierungen bringen
+            Preisgeld und Prestige und steigern den Pferdewert. Gute Pflege gibt einen Bonus.</li>
+        </ul>
+
+        <h3>Auktion</h3>
+        <p>Gegen KI bieten — sie kontert sofort bis zu ihrem verdeckten Maximum. Führst du beim
+        Zuschlag, geht das Pferd in deinen Stall (wenn Platz und Geld reichen). Eigene Pferde kannst du
+        mit <b>Limit (Reserve)</b> einliefern.</p>
+
+        <h3>Markt</h3>
+        <p>Kaufpferde erneuern sich alle 2 Wochen. Eigene Pferde bietest du zu einem Preis an; sie
+        verkaufen sich über die Wochen — je näher am Schätzwert, desto schneller. Die Anlage
+        <b>Vermarktung</b> beschleunigt Verkäufe und hebt den Erlös leicht.</p>
+
+        <h3>Prestige &amp; Rang</h3>
+        <p>Steigt durch Turnierplatzierungen (Sieg &gt; Podium &gt; Top 5). Höherer Rang → bessere
+        Marktpferde, größere Auktionen, stärkere Deckhengste. Pro Woche zerfällt Prestige ein kleines
+        bisschen.</p>
+
+        <h3>Tipps</h3>
+        <ul>
+          <li>Nicht überzüchten: eng verwandte Anpaarungen (hoher COI) ruinieren die Gesundheit.</li>
+          <li>Reservekasse halten — der Wochenunterhalt läuft immer weiter.</li>
+          <li>Junge Talente erst ausbilden, dann verkaufen: ausgebildete Pferde sind deutlich mehr wert.</li>
+          <li>Bei knapper Kasse Futter/Pflege kurz herunterstufen — aber nicht dauerhaft.</li>
+        </ul>
+      </div>
     </div>
   </div>
 
