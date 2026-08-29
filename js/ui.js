@@ -204,9 +204,10 @@ const UI = (function () {
           ${feedCareBlock('care', 'Pflege / Stallmanagement', Economy.CARE, s.careLevel != null ? s.careLevel : 1)}
         </div>
         <div class="row between small" style="margin-top:.6rem">
-          <span>Kosten je Pferd/Woche${Economy.season(s.week).idx === 3 ? ' <span class="tag warn">Winter +25 % Futter</span>' : ''}${(s.staff || []).some((x) => x.role === 'stallmeister') ? ' <span class="tag good">Stallmeister −20 % Pflege</span>' : ''}</span>
-          <b>${fmt(Math.round(Economy.feedDef(s).cost * (Economy.season(s.week).idx === 3 ? 1.25 : 1) + Economy.careDef(s).cost * ((s.staff || []).some((x) => x.role === 'stallmeister') ? 0.8 : 1)))} × ${s.horses.length} Pferde</b>
+          <span>Diese Woche: Futter${Economy.season(s.week).idx === 3 ? ' <span class="tag warn">Winter +25 %</span>' : ''}${Economy.pastureUsed(s) ? ' <span class="tag good">' + Economy.pastureUsed(s) + ' auf Weide</span>' : ''} + Pflege${(s.staff || []).some((x) => x.role === 'stallmeister') ? ' <span class="tag good">Stallmeister −20 %</span>' : ''}</span>
+          <b>${fmt(Economy.weeklyFeedCost(s))} + ${fmt(Math.round(s.horses.length * Economy.careDef(s).cost * ((s.staff || []).some((x) => x.role === 'stallmeister') ? 0.8 : 1)))}</b>
         </div>
+        ${feedSiloBlock(s)}
       </div>
 
       <div class="card" style="margin-top:1rem">
@@ -238,6 +239,26 @@ const UI = (function () {
         </div>
       </div>`;
   };
+
+  // Futter-Lager: Vorrat + Mengeneinkauf.
+  function feedSiloBlock(s) {
+    const cap = Economy.siloCapacity(s);
+    if (cap <= 0) return '<p class="small muted" style="margin-top:.5rem">Ein <b>Futter-Lager</b> (Anlagen) erlaubt Mengeneinkauf mit ' +
+      Math.round((1 - Economy.FEED_BULK_DISCOUNT) * 100) + ' % Rabatt und puffert gegen Winterpreise.</p>';
+    const stock = Math.round(s.feedStock || 0);
+    const pct = Math.min(100, Math.round((stock / cap) * 100));
+    const herd = Math.max(1, s.horses.length);
+    return `<div class="card" style="background:var(--surface-2);margin-top:.6rem">
+      <div class="row between"><b class="small">🌾 Futter-Lager</b><span class="small muted">${stock} / ${cap} Pferdewochen</span></div>
+      <div class="bar" style="margin:.3rem 0"><span style="width:${pct}%"></span></div>
+      <div class="small muted">Verbrauch aktuell ~${Economy.herdFeedNeed(s).toFixed(1)} Pferdewochen/Woche. Einkauf mit
+        ${Math.round((1 - Economy.FEED_BULK_DISCOUNT) * 100)} % Mengenrabatt zum Basispreis (${fmt(Economy.feedDef(s).cost)}/Pferdewoche).</div>
+      <div class="row" style="margin-top:.35rem">
+        <input type="number" id="feed-weeks" class="bid-input" value="4" min="1" step="1">
+        <button class="small" data-action="buy-feed">Wochen einlagern (${herd} Pferde)</button>
+      </div>
+    </div>`;
+  }
 
   // Ein Auswahl-Block für Fütterung bzw. Pflege.
   function feedCareBlock(kind, title, list, level) {
@@ -493,7 +514,7 @@ const UI = (function () {
       <label class="small">Geschlecht<select data-action="stall-filter" data-field="sex">${o('', f.sex, 'alle')}${o('hengst', f.sex, '♂ Hengst')}${o('stute', f.sex, '♀ Stute')}${o('wallach', f.sex, '⚬ Wallach')}</select></label>
       <label class="small">Rasse<select data-action="stall-filter" data-field="breed">${o('', f.breed, 'alle')}${breeds.map((b) => o(b, f.breed, esc(b))).join('')}</select></label>
       <label class="small">stark in<select data-action="stall-filter" data-field="disc">${o('', f.disc, '—')}${DISC.map((d) => o(d, f.disc, d)).join('')}</select></label>
-      <label class="small">Status<select data-action="stall-filter" data-field="flag">${o('', f.flag, 'alle')}${o('adult', f.flag, 'ab 3 J.')}${o('young', f.flag, 'Jungpferde')}${o('pregnant', f.flag, 'tragend')}${o('sale', f.flag, 'im Verkauf')}${o('sick', f.flag, 'Gesundheit < 60')}${o('noplan', f.flag, 'ohne Trainingsplan')}${o('ungekört', f.flag, 'Hengst ohne Körung')}</select></label>
+      <label class="small">Status<select data-action="stall-filter" data-field="flag">${o('', f.flag, 'alle')}${o('adult', f.flag, 'ab 3 J.')}${o('young', f.flag, 'Jungpferde')}${o('pregnant', f.flag, 'tragend')}${o('sale', f.flag, 'im Verkauf')}${o('sick', f.flag, 'Gesundheit < 60')}${o('noplan', f.flag, 'ohne Trainingsplan')}${o('ungekört', f.flag, 'Hengst ohne Körung')}${o('pasture', f.flag, 'auf der Weide')}</select></label>
       <label class="small">Sortieren<select data-action="stall-filter" data-field="sort">${o('age', f.sort, 'Alter')}${o('name', f.sort, 'Name')}${o('value', f.sort, 'Wert')}${o('ex', f.sort, 'Exterieur')}${o('in', f.sort, 'Interieur')}${o('he', f.sort, 'Gesundheit')}${DISC.map((d) => o(d, f.sort, d)).join('')}</select></label>
       <button class="small secondary" data-action="stall-filter" data-field="dir" data-toggle="1">${f.dir === 1 ? '↑' : '↓'}</button>
       <button class="small secondary" data-action="stall-filter-reset">zurücksetzen</button>
@@ -513,6 +534,7 @@ const UI = (function () {
     else if (f.flag === 'sick') list = list.filter((h) => h.health < 60);
     else if (f.flag === 'noplan') list = list.filter((h) => ageYears(h) >= Model.MATURITY_YEARS && !(h.trainingPlan || []).some((d) => d));
     else if (f.flag === 'ungekört') list = list.filter((h) => h.sex === 'hengst' && !h.noPapers && !h.isMix && ageYears(h) >= Model.MATURITY_YEARS && Model.approvalRank(h.zuchtzulassung) < 2);
+    else if (f.flag === 'pasture') list = list.filter((h) => h.onPasture);
     const val = (h) => {
       switch (f.sort) {
         case 'name': return h.name.toLowerCase();
@@ -539,10 +561,11 @@ const UI = (function () {
       const best = Model.bestDiscipline(h);
       const preg = h.pregnancy ? ' 🤰' + h.pregnancy.weeksLeft + 'W' : '';
       const sale = h.forSale ? ' 🏷️' : (h.offered ? ' 🔒' : '');
+      const paddock = h.onPasture ? ' 🌾' : '';
       const cmp = compareIds.indexOf(h.id) !== -1;
       return '<tr class="clickable ' + (h.id === selectedId ? 'selected' : '') + '" data-action="select-horse" data-id="' + h.id + '">' +
         '<td><button class="small secondary" data-action="cmp-toggle" data-id="' + h.id + '" title="vergleichen"' + (cmp ? ' style="background:var(--accent);color:#fff"' : '') + '>⚖</button></td>' +
-        '<td><b>' + esc(h.name) + '</b>' + preg + sale + '<br><span class="muted small">' + esc(h.breed) + '</span></td>' +
+        '<td><b>' + esc(h.name) + '</b>' + preg + sale + paddock + '<br><span class="muted small">' + esc(h.breed) + '</span></td>' +
         '<td class="small">' + sexIcon(h) + '<br>' + ageStr(h) + '</td>' +
         '<td class="small">' + esc(phenoOf(h).display) + ' ' + rarityTag(h) + '</td>' +
         '<td class="small">' + esc(best) + '<br>' + bar(h.skill[best], h.potential[best]) + '</td>' +
@@ -668,6 +691,8 @@ const UI = (function () {
         ${subTraitDetails('Gesundheit', Model.GESUNDHEIT_TRAITS, Model.gesundheitOf(h), h.health)}
         <div class="statline"><span>Energie</span>${plainBar(h.energy, 'warn')}<span></span></div>
 
+        ${pastureBlock(h)}
+
         <div>
           <b class="small">Wochen-Trainingsplan</b> <span class="muted small">(6 Einheiten, wird bei „Woche weiter" abgearbeitet)</span>
           ${planEditor}
@@ -729,6 +754,18 @@ const UI = (function () {
       '<div class="small muted">OP-Schutz erstattet 80 % von Tierarzt-Behandlungen (nicht Routine). Vollschutz zusätzlich 70 % des Schätzwerts (max. ' + fmt(120000) + ') bei Tod durch Alter/Geburt. Wartezeit OP ' + Economy.INSURE_VET_WAIT + ' Wo., Leben ' + Economy.INSURE_LIFE_WAIT + ' Wo.</div>' +
       (blocked ? '<div class="small tag warn">Neuabschluss nicht möglich (Alter > 20 J. oder Gesundheit < 40).</div>' : '') +
       '</div>';
+  }
+
+  function pastureBlock(h) {
+    const s = Game.state;
+    const slots = Economy.pastureSlots(s);
+    const used = Economy.pastureUsed(s);
+    if (slots <= 0 && !h.onPasture) return '';
+    const full = !h.onPasture && used >= slots;
+    return '<label class="small row" style="gap:.4rem;cursor:pointer;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:.35rem .5rem">' +
+      '<input type="checkbox" data-action="set-pasture" data-id="' + h.id + '"' + (h.onPasture ? ' checked' : '') + (full ? ' disabled' : '') + '>' +
+      '🌾 Weidegang <span class="muted">(' + used + '/' + slots + ' Koppelplätze · spart Futter, erholt Energie/Gesundheit, hebt Nervenstärke/Umgänglichkeit; −20 % Trainingszuwachs; im Winter ohne Wirkung)</span>' +
+      (full ? ' <span class="tag warn">keine freien Plätze</span>' : '') + '</label>';
   }
 
   function orderMatchBlock(h) {
@@ -1353,6 +1390,17 @@ const UI = (function () {
       const inp = document.getElementById('boarding-input');
       const r = Game.setBoarding(inp ? parseInt(inp.value, 10) : 0);
       if (r.ok) toast('Pensionsstall aktualisiert.');
+      return;
+    }
+    if (a === 'set-pasture') {
+      const r = Game.setPasture(el.dataset.id, el.checked);
+      if (!r.ok) { toast(r.msg, true); render(); }
+      return;
+    }
+    if (a === 'buy-feed') {
+      const inp = document.getElementById('feed-weeks');
+      const r = Game.buyFeed(inp ? parseInt(inp.value, 10) : 0);
+      toast(r.ok ? 'Eingelagert: ' + fmt(r.cost) : r.msg, !r.ok);
       return;
     }
     if (a === 'offer-stud-service' || a === 'set-stud-fee') {

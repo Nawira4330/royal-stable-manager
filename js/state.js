@@ -37,8 +37,9 @@ const Game = (function () {
       week: 0,
       cash: 60000,
       prestige: 0,
-      facilities: { stalls: 0, arena: 0, vet: 0, marketing: 0 },
+      facilities: { stalls: 0, arena: 0, vet: 0, marketing: 0, pasture: 0, silo: 0 },
       feedLevel: 1,       // Fütterung: 0 Spar / 1 Standard / 2 Premium
+      feedStock: 0,       // eingelagerte Pferdewochen Futter
       careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
       demand: Economy.initDemand(),   // Angebot & Nachfrage je Rasse/Disziplin
       friendCode: Friend.playerCode(),
@@ -141,6 +142,9 @@ const Game = (function () {
     if (!Array.isArray(state.redeemedCodes)) state.redeemedCodes = [];
     if (state.feedLevel == null) state.feedLevel = 1;
     if (state.careLevel == null) state.careLevel = 1;
+    if (state.facilities.pasture == null) state.facilities.pasture = 0;
+    if (state.facilities.silo == null) state.facilities.silo = 0;
+    if (state.feedStock == null) state.feedStock = 0;
     state.friendStuds.forEach((x) => Model.ensureTraits(x.horse));
     const fix = (h) => { if (h) Model.ensureTraits(h); };
     (state.horses || []).forEach((h) => {
@@ -292,6 +296,44 @@ const Game = (function () {
     log('🏨 Pensionsstall: ' + n + ' Gastbox' + (n === 1 ? '' : 'en') + ' vermietet (' + Economy.fmtEur(Economy.boardIncomePerBox(state)) + '/Box/Wo.).', 'info');
     save(); emit();
     return { ok: true };
+  }
+
+  // --- Weidegang: ein Pferd auf die Koppel stellen (spart Futter, erholt,
+  //     hebt langsam das Interieur; dafür −20 % Trainingszuwachs).
+  function setPasture(horseId, on) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (on) {
+      if (Economy.pastureUsed(state) >= Economy.pastureSlots(state)) {
+        return { ok: false, msg: 'Keine freien Koppelplätze — Weide ausbauen.' };
+      }
+      h.onPasture = true;
+      log('🌾 ' + h.name + ' kommt auf die Weide.', 'info');
+    } else {
+      delete h.onPasture;
+      log('🌾 ' + h.name + ' kommt zurück in den Stall.', 'info');
+    }
+    save(); emit();
+    return { ok: true };
+  }
+
+  // --- Futter-Lager: Futter im Voraus einlagern (Mengenrabatt), zehrt sich
+  //     wöchentlich mit dem Verbrauch ab.
+  function buyFeed(weeks) {
+    weeks = Math.max(1, Math.round(weeks || 0));
+    const cap = Economy.siloCapacity(state);
+    if (cap <= 0) return { ok: false, msg: 'Kein Futter-Lager gebaut (Anlagen).' };
+    const room = cap - (state.feedStock || 0);
+    if (room <= 0) return { ok: false, msg: 'Das Futter-Lager ist voll.' };
+    let units = Math.min(weeks * Math.max(1, state.horses.length), room);
+    const cost = Math.round(units * Economy.feedDef(state).cost * Economy.FEED_BULK_DISCOUNT);
+    if (state.cash < cost) return { ok: false, msg: 'Nicht genug Geld (' + Economy.fmtEur(cost) + ').' };
+    state.cash -= cost;
+    state.feedStock = (state.feedStock || 0) + units;
+    log('🌾 Futter eingelagert: ' + Math.round(units) + ' Pferdewochen für ' + Economy.fmtEur(cost) +
+      ' (' + Math.round((1 - Economy.FEED_BULK_DISCOUNT) * 100) + ' % Mengenrabatt). Vorrat: ' + Math.round(state.feedStock) + '/' + cap + '.', 'cost');
+    save(); emit();
+    return { ok: true, units: units, cost: cost };
   }
 
   // --- Eigene Deckstation: eigenen Hengst fremden Zuchtstuten anbieten.
@@ -959,17 +1001,26 @@ const Game = (function () {
     const births = [];
     state.horses.forEach((h) => {
       const y = Model.ageYears(h, state.week);
-      // Energie (abhängig von Fütterung + Jahreszeit)
-      h.energy = clamp(h.energy + feed.energyRegen + Economy.seasonEnergyBonus(state.week), 0, 100);
-      // Leichte Gesundheits-Regeneration durch gutes Futter
-      if (feed.healthRegen && h.health < 100 && h.health > 25) {
-        Model.adjustHealth(h, feed.healthRegen);
+      const grazing = !!h.onPasture && Economy.season(state.week).idx !== 3;   // Winter: keine Weidewirkung
+      // Energie (abhängig von Fütterung + Jahreszeit + Weidegang)
+      h.energy = clamp(h.energy + feed.energyRegen + Economy.seasonEnergyBonus(state.week) + (grazing ? 3 : 0), 0, 100);
+      // Leichte Gesundheits-Regeneration durch gutes Futter / Weidegang
+      if ((feed.healthRegen || grazing) && h.health < 100 && h.health > 25) {
+        Model.adjustHealth(h, (feed.healthRegen || 0) + (grazing ? 0.4 : 0));
       }
-      // Intensive Pflege hebt langsam eine Interieur-Einzelnote
-      if (care.interieurDrift && Math.random() < care.interieurDrift && h.interieur) {
-        const t = Model.INTERIEUR_TRAITS[Model.randInt(0, Model.INTERIEUR_TRAITS.length - 1)];
+      // Intensive Pflege hebt langsam eine Interieur-Einzelnote; Weidegang
+      // (Herdenleben) hebt bevorzugt Nervenstärke/Umgänglichkeit.
+      const interieurTick = (care.interieurDrift && Math.random() < care.interieurDrift) || (grazing && Math.random() < 0.06);
+      if (interieurTick && h.interieur) {
+        const pool = grazing ? ['Nervenstärke', 'Umgänglichkeit'] : Model.INTERIEUR_TRAITS;
+        const t = pool[Model.randInt(0, pool.length - 1)];
         h.interieur[t] = clamp(h.interieur[t] + 1, 10, 99);
         h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
+      }
+      // Kleines Verletzungsrisiko auf der Koppel (Tritt in der Herde).
+      if (grazing && Math.random() < 0.015) {
+        Model.injureHealth(h, Model.randInt(2, 7), ['Fundament & Sehnen']);
+        log('🌾 ' + h.name + ' hat sich auf der Koppel eine leichte Blessur geholt.', 'warn');
       }
       // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten). Pferde in
       // einem Verkaufsangebot trainieren nicht.
@@ -994,6 +1045,7 @@ const Game = (function () {
           if (gap > 0.2) {
             const rate = 0.46 * arena.mult * feed.trainMult
               * Economy.staffTrainBonus(state, d) * Economy.seasonTrainMult(state.week)
+              * (grazing ? 0.8 : 1)
               * clamp(gap / 40, 0.15, 1)
               * clamp(h.interieur ? (Model.interieurOf(h)['Lernwille'] + Model.interieurOf(h)['Rittigkeit']) / 140 : h.temperament / 70, 0.5, 1.2)
               * Model.ageFactor(y)
@@ -1311,12 +1363,19 @@ const Game = (function () {
       }
     }
 
-    // 8) Unterhalt abziehen (Anlagen + Futter + Pflege je Pferd).
+    // 8) Unterhalt abziehen (Anlagen + Futter (netto Lager/Weide) + Pflege + Personal).
+    const fromStock = Economy.feedFromStock(state);
+    const feedCostThisWeek = Economy.weeklyFeedCost(state);
     const upkeep = Economy.weeklyUpkeep(state);
     state.cash -= upkeep;
-    const perHorse = feed.cost + care.cost;
-    log('Wochenunterhalt: -' + Economy.fmtEur(upkeep) + ' (' + state.horses.length + ' Pferde × ' +
-      Economy.fmtEur(perHorse) + ' Futter/Pflege + Anlagen).', 'cost');
+    if (fromStock > 0) {
+      const emptyBefore = (state.feedStock || 0) - fromStock <= 0;
+      state.feedStock = Math.max(0, (state.feedStock || 0) - fromStock);
+      log('🌾 Futter-Lager: ' + fromStock.toFixed(1) + ' Pferdewochen entnommen — Vorrat noch ' + Math.round(state.feedStock) + '.', 'info');
+      if (emptyBefore) log('🌾 Das Futter-Lager ist leer — ab jetzt wieder Wocheneinkauf zum Normalpreis.', 'warn');
+    }
+    log('Wochenunterhalt: -' + Economy.fmtEur(upkeep) + ' (Futter ' + Economy.fmtEur(feedCostThisWeek) +
+      ' + Pflege + Anlagen + Personal).', 'cost');
 
     // 8b) Kredit-Zinsen.
     if (state.debt > 0) {
@@ -1351,6 +1410,10 @@ const Game = (function () {
     // schlechte erhöht (care.eventMult).
     if (roll < 0.3 * care.eventMult * Economy.staffEventMult(state) && state.horses.length) {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
+      // Weidepferde (frische Luft, Bewegung) stecken kleinere Infekte oft weg.
+      if (h.onPasture && Economy.season(state.week).idx !== 3 && Math.random() < 0.4) {
+        return;
+      }
       const bill = Math.round((300 + Model.randInt(0, 900)) * Economy.staffVetMult(state));
       state.cash -= bill;
       claimVetInsurance(h, bill);
@@ -1488,6 +1551,14 @@ const Game = (function () {
     if (bigUninsured.length) t.push({ icon: '🛡️', tab: 'stall', kind: 'info',
       text: bigUninsured.length + ' wertvolle' + (bigUninsured.length > 1 ? ' Pferde' : 's Pferd') + ' (≥ 20.000 €) ohne Versicherung' });
 
+    if (Economy.siloCapacity(state) > 0 && (state.feedStock || 0) <= 0 && state.horses.length) {
+      t.push({ icon: '🌾', tab: 'gestüt', kind: 'info', text: 'Futter-Lager leer — Mengeneinkauf spart ' + Math.round((1 - Economy.FEED_BULK_DISCOUNT) * 100) + ' %' });
+    }
+    const freePaddocks = Economy.pastureSlots(state) - Economy.pastureUsed(state);
+    if (freePaddocks >= 2 && Economy.pastureUsed(state) === 0 && state.horses.length >= 3) {
+      t.push({ icon: '🌾', tab: 'stall', kind: 'info', text: freePaddocks + ' freie Koppelplätze — Weidegang senkt Futterkosten und erholt' });
+    }
+
     const freeSlots = Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0);
     if (freeSlots >= 3 && !(state.boarding > 0)) t.push({ icon: '🏨', tab: 'gestüt', kind: 'info',
       text: freeSlots + ' freie Stallplätze — Pensionsstall bringt passives Wocheneinkommen' });
@@ -1529,6 +1600,8 @@ const Game = (function () {
     setStudPrefix: setStudPrefix,
     setPrefixOn: setPrefixOn,
     setBoarding: setBoarding,
+    setPasture: setPasture,
+    buyFeed: buyFeed,
     offerStudService: offerStudService,
     stopStudService: stopStudService,
     colorTest: colorTest,

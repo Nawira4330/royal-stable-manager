@@ -35,7 +35,8 @@ auf dem Startbildschirm alle Regeln.
 ## Spielprinzip
 
 - **🏡 Gestüt** – Kasse, Prestige/Rang, Anlagen ausbauen (Stallplätze,
-  Trainingsanlage, Tierarzt/Reproduktion, Vermarktung), **Futter & Pflege**
+  Trainingsanlage, Tierarzt/Reproduktion, Vermarktung, **Weide/Koppeln**,
+  **Futter-Lager**), **Futter & Pflege**
   (je 3 Stufen: mehr Kosten je Pferd/Woche, dafür mehr Energie/Training/
   Fruchtbarkeit bzw. weniger Krankheiten, Turnier-Bonus, langsamerer
   Altersverschleiß), **Personal** (Bereiter → mehr Trainingszuwachs in ihren
@@ -47,7 +48,10 @@ auf dem Startbildschirm alle Regeln.
   Pferde nach Vorgabe: Prämie + Prestige, verfallene Aufträge kosten Prestige),
   **Zuchtbuch/Zuchtstempel** (Präfix wird eigenen Nachzuchten vorangestellt),
   **Pensionsstall** (freie Boxen an Gastpferde vermieten – passives
-  Wocheneinkommen, belegt echte Stallplätze), **Versicherung** je Pferd
+  Wocheneinkommen, belegt echte Stallplätze), **Weidegang** je Pferd
+  (−60 % Kraftfutter, erholt, hebt Nervenstärke/Umgänglichkeit; −20 %
+  Training; im Winter wirkungslos), **Futter-Lager** (Mengeneinkauf mit
+  20 % Rabatt, Vorrat zehrt wöchentlich ab), **Versicherung** je Pferd
   (OP-Schutz: 80 % der Tierarzt-Behandlungskosten; Vollschutz zusätzlich
   70 % des Schätzwerts bei Tod), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung

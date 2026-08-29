@@ -49,6 +49,26 @@ const Economy = (function () {
       ],
       describe: (l) => 'Verkauf x' + l.saleSpeed.toFixed(1) + ' Tempo, +' + Math.round((l.priceMult - 1) * 100) + '% Preis',
     },
+    pasture: {
+      label: 'Weide / Koppeln', unit: 'Plätze',
+      levels: [
+        { slots: 0, upkeep: 0, cost: 0 },
+        { slots: 4, upkeep: 40, cost: 6000 },
+        { slots: 10, upkeep: 90, cost: 16000 },
+        { slots: 20, upkeep: 160, cost: 38000 },
+      ],
+      describe: (l) => (l.slots ? l.slots + ' Koppelplätze' : 'keine Weide'),
+    },
+    silo: {
+      label: 'Futter-Lager', unit: 'Kapazität',
+      levels: [
+        { capacity: 0, upkeep: 0, cost: 0 },
+        { capacity: 60, upkeep: 20, cost: 4500 },
+        { capacity: 160, upkeep: 45, cost: 12000 },
+        { capacity: 400, upkeep: 90, cost: 28000 },
+      ],
+      describe: (l) => (l.capacity ? l.capacity + ' Pferdewochen Futter' : 'kein Lager'),
+    },
   };
 
   function facLevel(state, key) {
@@ -80,12 +100,32 @@ const Economy = (function () {
   function feedDef(state) { return FEED[state.feedLevel != null ? state.feedLevel : 1]; }
   function careDef(state) { return CARE[state.careLevel != null ? state.careLevel : 1]; }
 
+  // --- Futter: Verbrauch je Pferd/Woche in "Pferdewochen" (1 = volle Stallration).
+  //     Weidepferde grasen und brauchen außerhalb des Winters nur einen Zuschuss.
+  const FEED_BULK_DISCOUNT = 0.8;   // Mengenrabatt beim Einlagern
+  function pastureSlots(state) { return facLevel(state, 'pasture').slots || 0; }
+  function siloCapacity(state) { return facLevel(state, 'silo').capacity || 0; }
+  function pastureUsed(state) { return (state.horses || []).filter((h) => h.onPasture).length; }
+  function feedNeed(state, horse) {
+    if (!horse.onPasture) return 1;
+    return season(state.week).idx === 3 ? 1 : 0.4;   // Winter: keine Weide
+  }
+  function herdFeedNeed(state) {
+    return (state.horses || []).reduce((s, h) => s + feedNeed(state, h), 0);
+  }
+  function feedUnitCost(state) { return feedDef(state).cost * seasonFeedMult(state.week); }
+  function feedFromStock(state) { return Math.min(state.feedStock || 0, herdFeedNeed(state)); }
+  function weeklyFeedCost(state) {
+    return Math.round((herdFeedNeed(state) - feedFromStock(state)) * feedUnitCost(state));
+  }
+
   function weeklyUpkeep(state) {
     let u = 0;
     Object.keys(FACILITIES).forEach((k) => { u += facLevel(state, k).upkeep; });
     const stallmeister = (state.staff || []).some((x) => x.role === 'stallmeister');
     const careMult = stallmeister ? 0.8 : 1;
-    u += state.horses.length * (feedDef(state).cost * seasonFeedMult(state.week) + careDef(state).cost * careMult);
+    u += (state.horses || []).length * careDef(state).cost * careMult;
+    u += weeklyFeedCost(state);
     (state.staff || []).forEach((x) => { u += x.salary; });
     return Math.round(u);
   }
@@ -969,6 +1009,15 @@ const Economy = (function () {
     facLevel: facLevel,
     stallCapacity: stallCapacity,
     weeklyUpkeep: weeklyUpkeep,
+    FEED_BULK_DISCOUNT: FEED_BULK_DISCOUNT,
+    pastureSlots: pastureSlots,
+    siloCapacity: siloCapacity,
+    pastureUsed: pastureUsed,
+    feedNeed: feedNeed,
+    herdFeedNeed: herdFeedNeed,
+    feedUnitCost: feedUnitCost,
+    feedFromStock: feedFromStock,
+    weeklyFeedCost: weeklyFeedCost,
     prestigeMult: prestigeMult,
     prestigeTier: prestigeTier,
     maxLoan: maxLoan,
