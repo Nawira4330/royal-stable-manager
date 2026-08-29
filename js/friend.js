@@ -69,6 +69,7 @@ const Friend = (function () {
       exterieur: h.exterieur, interieur: h.interieur, gesundheit: h.gesundheit,
       conformation: h.conformation, temperament: h.temperament, health: h.health,
       quality: h.quality, wins: h.wins || 0, earnings: h.earnings || 0,
+      genoTested: h.genoTested !== false,
       turnierPunkte: h.turnierPunkte || {},
       sireName: h.sireName || null, damName: h.damName || null,
       ancestors: h.ancestors || {},

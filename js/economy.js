@@ -213,7 +213,7 @@ const Economy = (function () {
     const list = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.4 + tier * 0.05, 0.16), 0.05, 0.98);
-      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Markt', approved: Math.random() < 0.5 });
+      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Markt', approved: Math.random() < 0.5, genoTested: false });
       const val = Model.valuation(h, state.week, prestigeMult(state));
       const dm = demandMultiplier(state, h);
       const ask = Math.round(val * dm * (0.88 + Math.random() * 0.4) / 50) * 50;
@@ -342,7 +342,7 @@ const Economy = (function () {
     const lots = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.5 + tier * 0.06, 0.18), 0.1, 0.99);
-      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Auktion', approved: Math.random() < 0.6 });
+      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Auktion', approved: Math.random() < 0.6, genoTested: Math.random() < 0.5 });
       const dm = demandMultiplier(state, h);
       const val = Math.round(Model.valuation(h, state.week, prestigeMult(state)) * dm);
       lots.push({

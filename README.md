@@ -65,6 +65,10 @@ auf dem Startbildschirm alle Regeln.
   Umgekehrt lässt sich ein **eigener gekörter Hengst** in der Stall-Detailansicht
   fremden Zuchtstuten anbieten: du setzt das Deckgeld, wöchentlich buchen einige
   Stuten (Einnahme minus 8 % Vermittlung), ohne Fohlen im eigenen Stall.
+  **Verdeckte Genetik:** Von Markt-/Auktionspferden und eigenen Fohlen ist nur der
+  Phänotyp bekannt; verdeckte Letalfarb-Träger (Frame Overo/OLWS, Roan) deckt erst
+  ein **Farbtest** (500 €) auf. Der Zuchtplaner zeigt die Farb-/Letalrisiko-Prognose
+  nur, wenn beide Elterntiere getestet sind.
 - **🏆 Schauen** – je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen)
   mit Mindestanforderung, Jungpferde-Prüfungen, Nenn-/Reisekosten,
   Energieverbrauch. Dazu **Zuchtschauen** und **Körungen/Prämierungen**

@@ -71,6 +71,8 @@ const UI = (function () {
     }
     const br = Model.breederRating(h);
     if (br) b.push('<span class="tag rare" title="Ø Fohlenqualität ' + br.avg.toFixed(2) + ' aus ' + br.count + ' Fohlen">Vererber ' + '★'.repeat(br.stars) + '</span>');
+    if (h.genoTested === false) b.push('<span class="tag">🔬 nicht farbgetestet</span>');
+    else Model.lethalCarriers(h).forEach((c) => b.push('<span class="tag warn" title="Verdeckter Letalfarb-Träger">' + esc(c) + '-Träger</span>'));
     return b.join(' ');
   }
 
@@ -647,7 +649,10 @@ const UI = (function () {
         ${zuchtBadges(h) ? '<div class="badge-row">' + zuchtBadges(h) + '</div>' : ''}
         ${parents}
         <div><b>${esc(pheno.display)}</b> ${rarityTag(h)} ${pheno.blueEyes ? '<span class="tag">blaue Augen</span>' : ''}</div>
-        <div class="geno-tokens">${esc(pheno.tokens)}</div>
+        ${h.genoTested === false
+          ? `<div class="geno-tokens">🔬 Genotyp nicht getestet — nur das sichtbare Fell ist bekannt, verdeckte Farbträger (z. B. Frame Overo / Roan) nicht.
+             <button class="small" data-action="color-test" data-id="${h.id}" style="margin-top:.35rem">Farbtest (${fmt(Game.COLORTEST_COST)})</button></div>`
+          : `<div class="geno-tokens">${esc(pheno.tokens)}</div>`}
 
         <div>
           <div class="row between"><b>Ausbildung / Potenzial</b><span class="muted small">Balken hell = genet. Potenzial</span></div>
@@ -850,10 +855,17 @@ const UI = (function () {
           <details style="margin-top:.3rem"><summary class="small"><b>Interieur im Detail</b> (5 Einzelnoten)</summary>${subTable(fc, 'Interieur', dam)}</details>
           <details style="margin-top:.3rem"><summary class="small"><b>Gesundheit im Detail</b> (5 Einzelnoten) — Ø Erwartung ${fc.gesundheit.expect}</summary>${subTable(fc, 'Gesundheit', dam)}</details>
 
-          <p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
-          <ul class="foal-forecast small">
-            ${plan.forecast.outcomes.map((o) => '<li>' + o.pct + ' %&nbsp; ' + esc(o.label) + '</li>').join('')}
-          </ul>
+          ${(plan.sire.genoTested === false || plan.dam.genoTested === false)
+            ? `<p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b></p>
+               <p class="small tag warn">Farbprognose erst möglich, wenn Hengst und Stute farbgetestet sind — sonst bleiben verdeckte Träger (Frame Overo / Roan) und das Letalrisiko unbekannt.</p>
+               <div class="row">
+                 ${plan.dam.genoTested === false ? '<button class="small" data-action="color-test" data-id="' + plan.dam.id + '">Farbtest ' + esc(plan.dam.name) + ' (' + fmt(Game.COLORTEST_COST) + ')</button>' : ''}
+                 ${plan.sire.genoTested === false ? '<button class="small" data-action="color-test" data-id="' + plan.sire.id + '">Farbtest ' + esc(plan.sire.name) + ' (' + fmt(Game.COLORTEST_COST) + ')</button>' : ''}
+               </div>`
+            : `<p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
+               <ul class="foal-forecast small">
+                 ${plan.forecast.outcomes.map((o) => '<li>' + o.pct + ' %&nbsp; ' + esc(o.label) + '</li>').join('')}
+               </ul>`}
           <button data-action="breed-confirm">Decken lassen (${fmt(plan.fee)})</button>`;
       }
     }
@@ -1087,7 +1099,7 @@ const UI = (function () {
         : lot.leader === 'ai' ? '<span class="tag warn">Konkurrenz führt</span>' : '';
       return `<div class="card stack">
         <div class="row between"><b>${esc(h.name)}</b>${lot.consignedByPlayer ? '<span class="tag">dein Los</span>' : ''}</div>
-        <div class="small muted">${esc(h.breed)} · ${sexIcon(h)} · ${ageYears(h).toFixed(0)} J. · ${esc(phenoOf(h).display)}</div>
+        <div class="small muted">${esc(h.breed)} · ${sexIcon(h)} · ${ageYears(h).toFixed(0)} J. · ${esc(phenoOf(h).display)}${h.genoTested === false ? ' · <span class="tag">🔬 nicht farbgetestet</span>' : ''}</div>
         <div class="small">Exterieur ${Math.round(h.conformation)} · beste Disziplin ${Model.bestDiscipline(h)} ${Math.round(h.skill[Model.bestDiscipline(h)])} · ${h.wins} Siege</div>
         <div class="row between"><span>Schätzwert</span><b>${fmt(lot.estimate)}</b></div>
         <div class="row between"><span>Aktuelles Gebot</span><b>${fmt(lot.currentBid)}</b> ${leadTxt}</div>
@@ -1125,7 +1137,7 @@ const UI = (function () {
       return `<div class="card stack">
         <div class="row between"><b>${esc(h.name)}</b><span class="tag${(h.isMix || Model.isMixBreed(h.breed)) ? ' warn' : ''}">${esc(h.breed)}</span></div>
         <div class="small muted">${sexIcon(h)} · ${ageYears(h).toFixed(1)} J. · ${esc(phenoOf(h).display)} ${rarityTag(h)}</div>
-        <div class="geno-tokens">${esc(phenoOf(h).tokens)}</div>
+        <div class="geno-tokens">${h.genoTested === false ? '🔬 nicht farbgetestet — Genotyp unbekannt' : esc(phenoOf(h).tokens)}</div>
         <div class="small">Exterieur ${Math.round(h.conformation)} · Interieur ${Math.round(h.temperament)} · Gesundheit ${Math.round(h.health)}</div>
         <div class="statline"><span>${best}</span>${bar(h.skill[best], h.potential[best])}<span class="right">${Math.round(h.potential[best])}</span></div>
         <div class="small">Marktlage: ${demandTag(h)}</div>
@@ -1288,6 +1300,11 @@ const UI = (function () {
       return;
     }
     if (a === 'stop-stud-service') { Game.stopStudService(el.dataset.id); return; }
+    if (a === 'color-test') {
+      const r = Game.colorTest(el.dataset.id);
+      toast(r.ok ? (r.carriers.length ? 'Farbtest: trägt ' + r.carriers.join(', ') + '!' : 'Farbtest: keine Letalfarb-Träger.') : r.msg, !r.ok || r.carriers.length > 0);
+      return;
+    }
     if (a === 'drop-sponsor') {
       if (confirm('Sponsorenvertrag vorzeitig beenden? (kein Bonus, kleiner Prestige-Verlust)')) Game.dropSponsor(el.dataset.id);
       return;
@@ -1555,7 +1572,7 @@ const UI = (function () {
     return `<div class="card" style="background:var(--surface-2)">
       <div class="row between"><b>${esc(hp.name || '?')}</b><span class="tag${hp.isMix ? ' warn' : ''}">${esc(hp.breed || '')}</span></div>
       <div class="small muted">${hp.sex === 'hengst' ? '♂ Hengst' : hp.sex === 'stute' ? '♀ Stute' : '⚬ Wallach'} · ${y.toFixed(1)} J. · ${esc(ph.display)}</div>
-      <div class="geno-tokens">${esc(ph.tokens)}</div>
+      <div class="geno-tokens">${hp.genoTested === false ? '🔬 nicht farbgetestet — Genotyp unbekannt' : esc(ph.tokens)}</div>
       <div class="small">Exterieur ${Math.round(hp.conformation || 0)} · Interieur ${Math.round(hp.temperament || 0)} · Gesundheit ${Math.round(hp.health || 0)}</div>
       <div class="small muted">Begabungen (Potenzial): ${begs}</div>
       ${hp.wins ? '<div class="small">' + hp.wins + ' Turniersiege</div>' : ''}

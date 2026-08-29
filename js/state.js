@@ -313,6 +313,25 @@ const Game = (function () {
     return { ok: true };
   }
 
+  // --- Farbtest: deckt bei einem Pferd den vollständigen Genotyp und
+  //     verdeckte Farbträger (Frame Overo / Roan) auf.
+  const COLORTEST_COST = 500;
+  function colorTest(horseId) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.genoTested !== false) return { ok: false, msg: h.name + ' ist bereits farbgetestet.' };
+    if (state.cash < COLORTEST_COST) return { ok: false, msg: 'Farbtest ' + Economy.fmtEur(COLORTEST_COST) + ' nicht bezahlbar.' };
+    state.cash -= COLORTEST_COST;
+    h.genoTested = true;
+    const carriers = Model.lethalCarriers(h);
+    const tok = Genetics.describe(h.genotype, Model.ageYears(h, state.week)).tokens;
+    log('🔬 Farbtest ' + h.name + ' (-' + Economy.fmtEur(COLORTEST_COST) + '): ' + tok +
+      (carriers.length ? ' — trägt: ' + carriers.join(', ') + '!' : ' — keine Letalfarb-Träger.'),
+      carriers.length ? 'warn' : 'good');
+    save(); emit();
+    return { ok: true, carriers: carriers };
+  }
+
   function foalName() {
     const base = Names.randName();
     return (state.prefixOn && state.studPrefix) ? state.studPrefix + ' ' + base : base;
@@ -1388,6 +1407,11 @@ const Game = (function () {
         text: 'Zuchtauftrag ' + o.client + ' läuft in ' + left + ' Woche' + (left === 1 ? '' : 'n') + ' aus' });
     });
 
+    const untested = state.horses.filter((h) => h.genoTested === false &&
+      Model.ageYears(h, state.week) >= Model.MATURITY_YEARS && !h.offered);
+    if (untested.length) t.push({ icon: '🔬', tab: 'stall', kind: 'info',
+      text: untested.length + ' erwachsene' + (untested.length > 1 ? ' Pferde' : 's Pferd') + ' ohne Farbtest — verdeckte Farbträger vor der Zuchtplanung prüfen' });
+
     const freeSlots = Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0);
     if (freeSlots >= 3 && !(state.boarding > 0)) t.push({ icon: '🏨', tab: 'gestüt', kind: 'info',
       text: freeSlots + ' freie Stallplätze — Pensionsstall bringt passives Wocheneinkommen' });
@@ -1431,6 +1455,8 @@ const Game = (function () {
     setBoarding: setBoarding,
     offerStudService: offerStudService,
     stopStudService: stopStudService,
+    colorTest: colorTest,
+    COLORTEST_COST: COLORTEST_COST,
     fulfillBreedingOrder: fulfillBreedingOrder,
     createOffer: createOffer,
     cancelOffer: cancelOffer,

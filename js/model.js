@@ -119,7 +119,19 @@ const Model = (function () {
     if (h.noPapers === undefined) h.noPapers = false;
     if (h.foalsBred === undefined) h.foalsBred = 0;
     if (h.foalQualSum === undefined) h.foalQualSum = 0;
+    if (h.genoTested === undefined) h.genoTested = true;   // Altbestand gilt als getestet
     return h;
+  }
+
+  // Verdeckte letale Träger, die ein Farbtest aufdeckt (heterozygot O bzw. Rn).
+  function lethalCarriers(h) {
+    if (!h || h.genoTested === false || !h.genotype) return [];
+    const out = [];
+    const o = h.genotype.O || [];
+    if (o.indexOf('O') !== -1 && !(o[0] === 'O' && o[1] === 'O')) out.push('Frame Overo (OLWS)');
+    const rn = h.genotype.RN || [];
+    if (rn.indexOf('Rn') !== -1 && !(rn[0] === 'Rn' && rn[1] === 'Rn')) out.push('Roan');
+    return out;
   }
 
   function recalcHealth(h) {
@@ -232,6 +244,7 @@ const Model = (function () {
       foalsBred: 0,
       foalQualSum: 0,
       bred: !!opts.bred,
+      genoTested: opts.genoTested != null ? opts.genoTested : true,
       origin: opts.origin || 'generiert',
       acquiredWeek: opts.currentWeek || 0,
     };
@@ -276,6 +289,7 @@ const Model = (function () {
       turnierPunkte: p.turnierPunkte || {},
       sireId: null, damId: null, sireName: p.sireName || null, damName: p.damName || null,
       ancestors: p.ancestors && Object.keys(p.ancestors).length ? p.ancestors : syntheticAncestors(),
+      genoTested: p.genoTested !== false,
       bred: false, origin: origin || 'von Freund', acquiredWeek: currentWeek,
     };
     ensureTraits(h);
@@ -294,6 +308,7 @@ const Model = (function () {
       gesundheit: Object.assign({}, gesundheitOf(h)),
       zuchtzulassung: h.zuchtzulassung || null, praemie: h.praemie || null, titel: h.titel || null,
       leistungspruefung: h.leistungspruefung || null, noPapers: !!h.noPapers,
+      genoTested: h.genoTested !== false,
       conformation: h.conformation, temperament: h.temperament, health: h.health,
       quality: h.quality, ancestors: Object.assign({}, h.ancestors || {}),
     };
@@ -469,6 +484,7 @@ const Model = (function () {
       sireName: sire.name, damName: dam.name,
       ancestors: mergeAncestors(sire, dam),
       zuchtzulassung: null, praemie: null, titel: null, leistungspruefung: null, pendingTest: null,
+      genoTested: false,   // Fohlen: Farbträger erst per Farbtest bekannt
       foalsBred: 0, foalQualSum: 0,
       // Ohne Zuchtbucheintrag, wenn der Vater nicht (mind.) gekört/eingetragen ist.
       noPapers: fc.mix || approvalRank(sire.zuchtzulassung) < 2,
@@ -571,6 +587,8 @@ const Model = (function () {
     const br = breederRating(horse);
     if (br) v += (br.stars - 2) * 2600 + br.count * 200;   // Vererber-Bonus
     if (horse.noPapers) v *= 0.62;   // Fohlen ohne Zuchtbucheintrag
+    if (horse.genoTested === false) v *= 0.96;             // Farbträger unbekannt
+    else if (lethalCarriers(horse).length) v *= 0.93;      // trägt eine Letalfarbe
 
     if (y < 1) v *= 0.6;
     else if (y < 3) v *= 0.82;
@@ -611,6 +629,7 @@ const Model = (function () {
     pedigree: pedigree,
     breederRating: breederRating,
     breedDef: breedDef,
+    lethalCarriers: lethalCarriers,
     exterieurOf: exterieurOf,
     interieurOf: interieurOf,
     gesundheitOf: gesundheitOf,
