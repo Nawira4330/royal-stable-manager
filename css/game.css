@@ -113,8 +113,21 @@ input, select {
 main { max-width: 1400px; margin: 0 auto; padding: 1.1rem; }
 
 .grid { display: grid; gap: 1rem; }
+/* Grid-Items dürfen unter ihre Inhaltsbreite schrumpfen, damit .table-wrap
+   & Co. innen scrollen statt die Seite breitzudrücken. */
+.grid > * { min-width: 0; }
 .cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .cols-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+@media (max-width: 380px) {
+  .cols-2 { grid-template-columns: 1fr; }
+}
+
+/* Stall: Liste + Detailspalte nebeneinander, auf schmalen Schirmen gestapelt. */
+.stall-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1rem; }
+@media (max-width: 820px) {
+  .stall-grid { grid-template-columns: 1fr; }
+}
 
 .card {
   background: var(--surface);
@@ -168,7 +181,7 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 
 /* Wochen-Trainingsplan (6 Slots) */
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; margin: .4rem 0; }
-.plan-grid select { padding: .3rem .4rem; font-size: .82rem; }
+.plan-grid select { padding: .3rem .4rem; font-size: .82rem; min-width: 0; width: 100%; }
 
 .table-wrap { overflow-x: auto; }
 

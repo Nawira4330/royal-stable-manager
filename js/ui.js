@@ -471,7 +471,7 @@ const UI = (function () {
         '<td class="small">' + esc(best) + ' ' + Math.round(h.skill[best]) + '</td>' +
         '<td class="right small">' + fmt(Game.valuation(h)) + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>Rasse</th><th>Typ/Alter</th><th>Farbe</th><th>Stärke</th><th class="right">Wert</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Rasse</th><th>Typ/Alter</th><th>Farbe</th><th>Stärke</th><th class="right">Wert</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   function logHtml() {
@@ -557,7 +557,7 @@ const UI = (function () {
 
     return `
       <div class="card" style="margin-bottom:1rem">${stallFilterBar(s)}</div>
-      <div class="grid" style="grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap:1rem">
+      <div class="grid stall-grid">
         <div class="card">
           <h3>Stall · ${list.length}${list.length !== s.horses.length ? ' / ' + s.horses.length : ''} Pferde</h3>
           <div class="table-wrap"><table><thead><tr><th></th><th>Name</th><th>Typ/Alter</th><th>Farbe</th><th>beste Disziplin</th><th>Ext.</th><th class="right">Wert</th></tr></thead>
@@ -588,7 +588,7 @@ const UI = (function () {
     DISC.forEach((d) => { rows += rowN(d + ' (Pot.)', a.potential[d], b.potential[d]); });
     return `<div class="card stack">
       <div class="row between"><h3 style="margin:0">Vergleich</h3><button class="small secondary" data-action="cmp-clear">×</button></div>
-      <table class="small">${rows}</table>
+      <div class="table-wrap"><table class="small">${rows}</table></div>
     </div>`;
   }
 
@@ -801,8 +801,8 @@ const UI = (function () {
       `<td class="right muted small">${Math.round(o.min)}–${Math.round(o.max)}</td></tr>`;
   }
   function fcTable(rowsHtml) {
-    return `<table class="small"><thead><tr><th>Wert</th><th class="right">Hengst</th><th class="right">Stute</th>` +
-      `<th class="right">Ø</th><th class="right">Erwartung</th><th class="right">Streubereich</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    return `<div class="table-wrap"><table class="small"><thead><tr><th>Wert</th><th class="right">Hengst</th><th class="right">Stute</th>` +
+      `<th class="right">Ø</th><th class="right">Erwartung</th><th class="right">Streubereich</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
   }
   function begabungTable(fc, dam) {
     return fcTable(DISC.map((d) => fcRow(d, fc.begabungen[d], dam.potential[d])).join(''));
@@ -867,7 +867,7 @@ const UI = (function () {
         const m = plan.match;
         const coiPct = (plan.coi * 100).toFixed(1);
         const coiCls = plan.coi >= 0.125 ? 'warn' : plan.coi >= 0.0625 ? '' : 'good';
-        const traitList = (arr) => arr.map((x) => x.group[0] + ': ' + x.trait + ' ' + x.from + '→' + x.to).join(' · ');
+        const traitList = (arr) => arr.map((x) => x.group[0] + ': ' + x.trait + ' ' + Math.round(x.from) + '→' + Math.round(x.to)).join(' · ');
 
         planHtml = `
           <div class="small muted">Fohlenwerte im Vergleich zur Stute (du entscheidest, ob der Hengst passt):</div>
