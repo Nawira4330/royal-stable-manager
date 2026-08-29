@@ -218,6 +218,40 @@ const Model = (function () {
     return m;
   }
 
+  // Aus einem per Tauschcode empfangenen "packHorse"-Objekt ein vollwertiges
+  // Pferd im eigenen Bestand machen (frische ID, konsistente Sammelnoten).
+  function hydratePackedHorse(p, currentWeek, origin) {
+    const h = {
+      id: nextId(),
+      name: p.name || Names.randName(),
+      sex: p.sex || 'stute',
+      breed: p.breed,
+      isMix: !!p.isMix || isMixBreed(p.breed),
+      bornWeek: currentWeek - (p.ageWeeks || 3 * WEEKS_PER_YEAR),
+      genotype: p.genotype,
+      potential: Object.assign({}, p.potential),
+      skill: Object.assign(emptySkill(), p.skill || {}),
+      exterieur: p.exterieur ? Object.assign({}, p.exterieur) : null,
+      interieur: p.interieur ? Object.assign({}, p.interieur) : null,
+      gesundheit: p.gesundheit ? Object.assign({}, p.gesundheit) : null,
+      conformation: p.conformation, temperament: p.temperament, health: p.health,
+      energy: 100,
+      quality: p.quality != null ? p.quality : 0.5,
+      trainingFocus: null, trainingPlan: [],
+      pregnancy: null, forSale: null,
+      wins: p.wins || 0, shows: 0, earnings: p.earnings || 0, showLog: [],
+      turnierPunkte: p.turnierPunkte || {},
+      sireId: null, damId: null, sireName: p.sireName || null, damName: p.damName || null,
+      ancestors: p.ancestors && Object.keys(p.ancestors).length ? p.ancestors : syntheticAncestors(),
+      bred: false, origin: origin || 'von Freund', acquiredWeek: currentWeek,
+    };
+    ensureTraits(h);
+    h.conformation = clamp(round(mean(h.exterieur, EXTERIEUR_TRAITS)), 5, 100);
+    h.temperament = clamp(round(mean(h.interieur, INTERIEUR_TRAITS)), 5, 100);
+    h.health = clamp(round(mean(h.gesundheit, GESUNDHEIT_TRAITS)), 5, 100);
+    return h;
+  }
+
   function parentSnapshot(h) {
     return {
       id: h.id, name: h.name, sex: h.sex, breed: h.breed,
@@ -499,6 +533,7 @@ const Model = (function () {
     adjustHealth: adjustHealth,
     injureHealth: injureHealth,
     generateHorse: generateHorse,
+    hydratePackedHorse: hydratePackedHorse,
     parentSnapshot: parentSnapshot,
     foalStatForecast: foalStatForecast,
     matingMatch: matingMatch,

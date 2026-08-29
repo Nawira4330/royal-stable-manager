@@ -31,6 +31,9 @@ const Game = (function () {
       feedLevel: 1,       // Fütterung: 0 Spar / 1 Standard / 2 Premium
       careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
       demand: Economy.initDemand(),   // Angebot & Nachfrage je Rasse/Disziplin
+      friendCode: Friend.playerCode(),
+      friendStuds: [],    // per Tauschcode freigegebene Deckhengste von Freunden
+      redeemedCodes: [],  // Prüfsummen bereits eingelöster Codes
       horses: [],
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
@@ -73,8 +76,12 @@ const Game = (function () {
     if (!state) return;
     if (!state.demand) state.demand = Economy.initDemand();
     if (!state.showResults) state.showResults = [];
+    if (!state.friendCode) state.friendCode = Friend.playerCode();
+    if (!Array.isArray(state.friendStuds)) state.friendStuds = [];
+    if (!Array.isArray(state.redeemedCodes)) state.redeemedCodes = [];
     if (state.feedLevel == null) state.feedLevel = 1;
     if (state.careLevel == null) state.careLevel = 1;
+    state.friendStuds.forEach((x) => Model.ensureTraits(x.horse));
     const fix = (h) => { if (h) Model.ensureTraits(h); };
     (state.horses || []).forEach((h) => {
       fix(h);
@@ -118,6 +125,8 @@ const Game = (function () {
     }
     const entry = (state.studRoster || []).find((x) => x.horse.id === id);
     if (entry) return { horse: entry.horse, external: true, fee: entry.studFee };
+    const fr = (state.friendStuds || []).find((x) => x.horse.id === id);
+    if (fr) return { horse: fr.horse, external: true, fee: fr.studFee, friend: fr.friend };
     return null;
   }
   function stallFree() { return Economy.stallCapacity(state) - state.horses.length; }
@@ -213,6 +222,68 @@ const Game = (function () {
     state.stats.horsesSold++;
     save(); emit();
     return { ok: true, amount: v };
+  }
+
+  // --- Freundschaftscode-Tausch (kein Server, kein Login) ---------------
+  function offerHorseToFriend(horseId, price) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute lässt sich nicht per Code weitergeben.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: 'Pferd ist in der Auktion.' };
+    price = Math.max(0, Math.round(price || 0));
+    const code = Friend.encodeHorseOffer(h, price, state.friendCode, state.week);
+    state.cash += price;
+    state.stats.horsesSold += 1;
+    state.stats.totalEarnings += price;
+    Economy.applySaleImpact(state, h);
+    unlist(horseId);
+    removeHorse(horseId);
+    log('An Freund weitergegeben: ' + h.name + ' für ' + Economy.fmtEur(price) + '. Code an den Freund schicken.', 'good');
+    save(); emit();
+    return { ok: true, code: code, name: h.name };
+  }
+  function offerStudToFriend(horseId, fee) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.sex !== 'hengst') return { ok: false, msg: h.name + ' ist kein Hengst.' };
+    if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung.' };
+    fee = Math.max(0, Math.round(fee || 0));
+    const code = Friend.encodeStudOffer(h, fee, state.friendCode, state.week);
+    log('Deckhengst freigegeben: ' + h.name + ' (Deckgeld ' + Economy.fmtEur(fee) + '). Code an den Freund schicken.', 'info');
+    save(); emit();
+    return { ok: true, code: code, name: h.name };
+  }
+  function redeemFriendCode(text) {
+    let d;
+    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
+    if (d.from && d.from === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
+    if ((state.redeemedCodes || []).indexOf(d.hash) !== -1) return { ok: false, msg: 'Diesen Code hast du schon eingelöst.' };
+
+    if (d.kind === 'horse') {
+      if (stallFree() < 1) return { ok: false, msg: 'Kein freier Stallplatz.' };
+      if (state.cash < d.price) return { ok: false, msg: 'Nicht genug Geld (' + Economy.fmtEur(d.price) + ').' };
+      const h = Model.hydratePackedHorse(d.horse, state.week, 'von ' + d.from);
+      state.cash -= d.price;
+      state.horses.push(h);
+      state.redeemedCodes.push(d.hash);
+      if (state.redeemedCodes.length > 60) state.redeemedCodes.shift();
+      log('Von Freund ' + d.from + ' gekauft: ' + h.name + ' für ' + Economy.fmtEur(d.price) + '.', 'cost');
+      save(); emit();
+      return { ok: true, kind: 'horse', name: h.name };
+    }
+    // Deckhengst
+    const stud = Model.hydratePackedHorse(d.horse, state.week, 'Deckstation (Freund)');
+    stud.external = true;
+    state.friendStuds.push({ horse: stud, studFee: d.fee, friend: d.from, elite: false });
+    state.redeemedCodes.push(d.hash);
+    if (state.redeemedCodes.length > 60) state.redeemedCodes.shift();
+    log('Deckhengst von Freund ' + d.from + ' verfügbar: ' + stud.name + ' (Deckgeld ' + Economy.fmtEur(d.fee) + ').', 'good');
+    save(); emit();
+    return { ok: true, kind: 'stud', name: stud.name };
+  }
+  function removeFriendStud(horseId) {
+    state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
+    save(); emit();
   }
 
   function removeHorse(id) {
@@ -673,6 +744,10 @@ const Game = (function () {
     unlist: unlist,
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
+    offerHorseToFriend: offerHorseToFriend,
+    offerStudToFriend: offerStudToFriend,
+    redeemFriendCode: redeemFriendCode,
+    removeFriendStud: removeFriendStud,
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,
     doBreeding: doBreeding,

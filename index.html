@@ -58,6 +58,19 @@
     </div>
   </div>
 
+  <!-- Tauschcode anzeigen -->
+  <div class="overlay" id="code-overlay" hidden>
+    <div class="box stack">
+      <div class="row between"><h2 id="code-title" style="margin:0">Tauschcode</h2>
+        <button class="secondary" id="btn-code-close">Schließen</button></div>
+      <p class="muted small" id="code-hint"></p>
+      <textarea id="code-text" rows="5" readonly style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:.8rem"></textarea>
+      <button id="btn-code-copy">In die Zwischenablage kopieren</button>
+      <p class="muted small">Schick diesen Text per Messenger, E-Mail oder Zettel an deinen Freund – funktioniert
+      geräteübergreifend. Es werden keine Daten übertragen oder gespeichert.</p>
+    </div>
+  </div>
+
   <!-- How to Play -->
   <div class="overlay" id="howto-overlay" hidden>
     <div class="box wide stack" id="howto-box">
@@ -152,6 +165,14 @@
         verkaufen sich über die Wochen — je näher am Schätzwert, desto schneller. Die Anlage
         <b>Vermarktung</b> beschleunigt Verkäufe und hebt den Erlös leicht.</p>
 
+        <h3>Freunde (Pferde tauschen &amp; Deckhengste teilen)</h3>
+        <p>Keine Anmeldung, kein Server, keine Datenerhebung. Jede Installation hat einen zufälligen
+        <b>Freundschaftscode</b> (nur in diesem Browser). Im Stall „An Freund verkaufen" oder „Als Deckhengst
+        freigeben" erzeugt einen <b>Tauschcode</b> – reiner Text, den du selbst per Messenger/Mail an einen
+        Freund schickst (funktioniert geräteübergreifend). Der Freund fügt ihn unter „Gestüt → Freunde → Einlösen"
+        ein: beim Pferdekauf zahlt er den Preis, ein Deckhengst landet dauerhaft in seiner Deckstation. Jeder
+        Code lässt sich nur einmal einlösen.</p>
+
         <h3>Prestige &amp; Rang</h3>
         <p>Steigt durch Turnierplatzierungen (Sieg &gt; Podium &gt; Top 5). Höherer Rang → bessere
         Marktpferde, größere Auktionen, stärkere Deckhengste. Pro Woche zerfällt Prestige ein kleines
@@ -183,6 +204,7 @@
   <script src="js/names.js"></script>
   <script src="js/model.js"></script>
   <script src="js/economy.js"></script>
+  <script src="js/friend.js"></script>
   <script src="js/state.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>

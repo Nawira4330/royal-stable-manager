@@ -58,6 +58,13 @@ auf dem Startbildschirm alle Regeln.
   Verkaufstempo folgen der Nachfrage je Segment (Rasse + beste Disziplin +
   Sonderfarben); viel verkaufen drückt die Preise im eigenen Segment.
 
+- **👥 Freunde** (Tab Gestüt) – ohne Anmeldung, ohne Server, ohne Datenerhebung.
+  Jede Installation hat einen zufälligen **Freundschaftscode** (nur lokal im
+  Browser). „An Freund verkaufen" bzw. „Als Deckhengst freigeben" (im Stall)
+  erzeugt einen **Tauschcode** – reiner Text, den du selbst per Messenger/Mail
+  weitergibst; **geräteübergreifend**. Der Empfänger löst ihn unter „Gestüt →
+  Freunde" ein (jeder Code nur einmal). Das Spiel macht **keine Netzwerk­anfragen**.
+
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
 noch offen ist. Mit **„Woche weiter"** vergeht Zeit: Nachfrage driftet, Pferde
 altern und arbeiten ihren Trainingsplan ab, Fohlen werden geboren, Turniere

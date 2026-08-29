@@ -174,6 +174,23 @@ const UI = (function () {
         </div>
       </div>
 
+      <div class="card" style="margin-top:1rem">
+        <h3>👥 Freunde (Pferde tauschen &amp; Deckhengste teilen)</h3>
+        <p class="small muted">Keine Anmeldung, kein Server, keine Datenerhebung (DSGVO-konform). Dein Freundschaftscode ist eine
+        zufällige Kennung nur in diesem Browser. Tauschcodes sind reiner Text, den du selbst per Messenger/Mail an Freunde
+        gibst — funktioniert geräteübergreifend.</p>
+        <div class="row between">
+          <span>Dein Freundschaftscode</span>
+          <b class="geno-tokens" style="padding:.2rem .5rem">${esc(s.friendCode || '—')}</b>
+          <button class="small secondary" data-action="copy-friendcode">kopieren</button>
+        </div>
+        <div class="row" style="margin-top:.5rem;align-items:flex-start">
+          <textarea id="redeem-input" rows="2" style="flex:1;min-width:220px;font-family:ui-monospace,Consolas,monospace;font-size:.78rem" placeholder="Tauschcode eines Freundes hier einfügen…"></textarea>
+          <button class="small" data-action="redeem-code">Einlösen</button>
+        </div>
+        <p class="small muted">Im Tab „Stall" kannst du ein Pferd „An Freund verkaufen" oder einen Hengst „Als Deckhengst freigeben" — beides erzeugt einen Code.</p>
+      </div>
+
       <div class="grid cols-2" style="margin-top:1rem">
         <div class="card">
           <h3>Bestand (Kurzübersicht)</h3>
@@ -347,6 +364,10 @@ const UI = (function () {
             : '<button class="small secondary" data-action="consign" data-id="' + h.id + '">In Auktion einliefern</button>'}
           <button class="small danger" data-action="quick-sell" data-id="${h.id}">Schnellverkauf (½ Wert)</button>
         </div>
+        <div class="row">
+          <button class="small secondary" data-action="offer-horse" data-id="${h.id}">👥 An Freund verkaufen (Code)</button>
+          ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="offer-stud" data-id="' + h.id + '">👥 Als Deckhengst freigeben (Code)</button>' : ''}
+        </div>
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
   }
@@ -364,7 +385,8 @@ const UI = (function () {
   // --- 🧬 Zucht --------------------------------------------------------
   function sireExists(id) {
     if (Game.getHorse(id)) return true;
-    return (Game.state.studRoster || []).some((x) => x.horse.id === id);
+    return (Game.state.studRoster || []).some((x) => x.horse.id === id) ||
+      (Game.state.friendStuds || []).some((x) => x.horse.id === id);
   }
   function resolveSireHorse(id) {
     const own = Game.getHorse(id);
@@ -420,15 +442,18 @@ const UI = (function () {
     const selMare = breedDam ? Game.getHorse(breedDam) : null;
     const sireOwn = stallions.map((h) => '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
       esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + '</option>').join('');
-    const sireStud = roster.map((x) => {
+    const studOpt = (x, friend) => {
       const h = x.horse;
       return '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
         esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' +
-        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')</option>';
-    }).join('');
+        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + (friend ? ', Freund ' + friend : '') + ')</option>';
+    };
+    const sireStud = (s.studRoster || []).map((x) => studOpt(x, null)).join('');
+    const sireFriend = (s.friendStuds || []).map((x) => studOpt(x, x.friend)).join('');
     const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
       (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
-      (sireStud ? '<optgroup label="Deckstation (fremde Hengste)">' + sireStud + '</optgroup>' : '') +
+      (sireStud ? '<optgroup label="Deckstation">' + sireStud + '</optgroup>' : '') +
+      (sireFriend ? '<optgroup label="Von Freunden">' + sireFriend + '</optgroup>' : '') +
       '</select>';
 
     const pregnant = s.horses.filter((h) => h.pregnancy);
@@ -481,7 +506,9 @@ const UI = (function () {
     //     keinen Hengst.
     const f = studFilter;
     const num = (v) => (v === '' || v == null ? null : parseFloat(v));
-    let list = roster.slice().map((x) => ({ x: x, h: x.horse, best: Model.bestDiscipline(x.horse) }));
+    const friendStuds = s.friendStuds || [];
+    const allStuds = roster.map((x) => ({ e: x, friend: null })).concat(friendStuds.map((x) => ({ e: x, friend: x.friend })));
+    let list = allStuds.map(({ e, friend }) => ({ x: e, h: e.horse, friend: friend, best: Model.bestDiscipline(e.horse) }));
     list = list.filter(({ h, x }) => {
       if (f.breed && h.breed !== f.breed) return false;
       if (num(f.exMin) != null && h.conformation < num(f.exMin)) return false;
@@ -530,14 +557,14 @@ const UI = (function () {
       </div>`;
 
     const begCell = (h) => DISC.map((d) => '<span class="' + (f.sort === d ? 'tag' : 'muted') + '">' + d.slice(0, 2) + ' ' + Math.round(h.potential[d]) + '</span>').join(' ');
-    const studRows = list.map(({ x, h }) => `
+    const studRows = list.map(({ x, h, friend }) => `
       <tr class="clickable ${breedSire === h.id ? 'selected' : ''}" data-action="pick-stud" data-id="${h.id}">
-        <td><b>${esc(h.name)}</b>${x.elite ? ' <span class="tag rare">Elite</span>' : ''}<br><span class="muted small">${esc(h.breed)} · ${esc(phenoOf(h).base)} · ${ageYears(h).toFixed(0)} J.</span></td>
+        <td><b>${esc(h.name)}</b>${x.elite ? ' <span class="tag rare">Elite</span>' : ''}${friend ? ' <span class="tag good">Freund ' + esc(friend) + '</span>' : ''}<br><span class="muted small">${esc(h.breed)} · ${esc(phenoOf(h).base)} · ${ageYears(h).toFixed(0)} J.</span></td>
         <td class="right">${Math.round(h.conformation)}</td>
         <td class="right">${Math.round(h.temperament)}</td>
         <td class="right">${Math.round(h.health)}</td>
         <td class="small">${begCell(h)}</td>
-        <td class="right"><b>${fmt(x.studFee)}</b></td>
+        <td class="right"><b>${fmt(x.studFee)}</b>${friend ? '<br><button class="small secondary" data-action="remove-friend-stud" data-id="' + h.id + '">entfernen</button>' : ''}</td>
       </tr>`).join('') || '<tr><td colspan="6" class="muted small">Kein Hengst passt zu deinen Kriterien.</td></tr>';
 
     return `
@@ -565,7 +592,7 @@ const UI = (function () {
       <div class="card" style="margin-top:1rem">
         <h3>🏇 Deckstation — Hengstsuche</h3>
         <p class="small muted">Setz deine Kriterien; die Liste filtert und sortiert <b>nur danach</b>. Beurteile selbst, welcher Hengst zu deiner Stute passt.
-        Zeile anklicken übernimmt ihn in den Zuchtplaner. ${list.length}/${roster.length} Hengsten entsprechen den Kriterien. Roster wechselt Woche ${s.nextStudWeek || 0}.</p>
+        Zeile anklicken übernimmt ihn in den Zuchtplaner. ${list.length}/${allStuds.length} Hengsten entsprechen den Kriterien${friendStuds.length ? ' (inkl. ' + friendStuds.length + ' von Freunden)' : ''}. Deckstation wechselt Woche ${s.nextStudWeek || 0}.</p>
         ${filterBar}
         <div class="table-wrap" style="margin-top:.5rem">
           <table>
@@ -780,6 +807,13 @@ const UI = (function () {
     $('#btn-howto').addEventListener('click', () => { $('#howto-overlay').hidden = false; });
     $('#btn-howto-close').addEventListener('click', () => { $('#howto-overlay').hidden = true; });
     $('#howto-overlay').addEventListener('click', (e) => { if (e.target.id === 'howto-overlay') $('#howto-overlay').hidden = true; });
+    $('#btn-code-close').addEventListener('click', () => { $('#code-overlay').hidden = true; });
+    $('#code-overlay').addEventListener('click', (e) => { if (e.target.id === 'code-overlay') $('#code-overlay').hidden = true; });
+    $('#btn-code-copy').addEventListener('click', () => {
+      const t = $('#code-text'); t.select();
+      try { navigator.clipboard.writeText(t.value); toast('Kopiert.'); }
+      catch (e) { try { document.execCommand('copy'); toast('Kopiert.'); } catch (e2) { toast('Bitte manuell markieren und kopieren.', true); } }
+    });
     $('#btn-export').addEventListener('click', () => {
       const t = $('#export-text'); t.hidden = false; t.value = Game.exportSave(); t.select();
     });
@@ -828,6 +862,46 @@ const UI = (function () {
     }
 
     if (a === 'goto-tab') { showTab(el.dataset.tab); return; }
+
+    if (a === 'copy-friendcode') {
+      try { navigator.clipboard.writeText(Game.state.friendCode); toast('Freundschaftscode kopiert.'); }
+      catch (e) { toast(Game.state.friendCode, false); }
+      return;
+    }
+    if (a === 'redeem-code') {
+      const inp = $('#redeem-input');
+      const r = Game.redeemFriendCode(inp ? inp.value : '');
+      if (!r.ok) { toast(r.msg, true); return; }
+      toast(r.kind === 'stud' ? 'Deckhengst „' + r.name + '" ist jetzt in deiner Deckstation.' : '„' + r.name + '" ist in deinem Stall.');
+      render();
+      return;
+    }
+    if (a === 'offer-horse') {
+      const h = Game.getHorse(el.dataset.id);
+      const def = Game.marketPrice(h);
+      const p = prompt('„' + h.name + '" an einen Freund verkaufen.\nPreis, den dein Freund zahlt (du bekommst ihn sofort gutgeschrieben, das Pferd verlässt deinen Stall):', def);
+      if (p == null) return;
+      if (!confirm('„' + h.name + '" wird jetzt aus deinem Stall entfernt und du erhältst ' + fmt(parseInt(p, 10) || 0) + '. Fortfahren?')) return;
+      const r = Game.offerHorseToFriend(h.id, parseInt(p, 10));
+      if (!r.ok) { toast(r.msg, true); return; }
+      selectedId = null;
+      UI.showCode('Pferde-Tauschcode: ' + r.name,
+        'Schick diesen Code an deinen Freund. Er fügt ihn unter „Gestüt → Freunde → Einlösen" ein und zahlt den Preis.', r.code);
+      render();
+      return;
+    }
+    if (a === 'offer-stud') {
+      const h = Game.getHorse(el.dataset.id);
+      const def = 800 + Math.round(Game.valuation(h) * 0.03);
+      const p = prompt('„' + h.name + '" als Deckhengst für einen Freund freigeben.\nDeckgeld, das dein Freund je Bedeckung zahlt (dein Hengst bleibt bei dir):', def);
+      if (p == null) return;
+      const r = Game.offerStudToFriend(h.id, parseInt(p, 10));
+      if (!r.ok) { toast(r.msg, true); return; }
+      UI.showCode('Deckhengst-Code: ' + r.name,
+        'Schick diesen Code an deinen Freund. Der Hengst erscheint dann dauerhaft in seiner Deckstation.', r.code);
+      return;
+    }
+    if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
 
     if (a === 'rename-horse') {
       const h = Game.getHorse(el.dataset.id);
@@ -938,5 +1012,13 @@ const UI = (function () {
     Game.onChange(() => render());
   }
 
-  return { init: init, showTab: showTab, toast: toast };
+  function showCode(title, hint, code) {
+    $('#code-title').textContent = title;
+    $('#code-hint').textContent = hint || '';
+    $('#code-text').value = code;
+    $('#code-overlay').hidden = false;
+    setTimeout(() => { $('#code-text').focus(); $('#code-text').select(); }, 30);
+  }
+
+  return { init: init, showTab: showTab, toast: toast, showCode: showCode };
 })();
