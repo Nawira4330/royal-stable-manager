@@ -310,6 +310,13 @@ const Game = (function () {
       return { ok: true, action: 'payout', kind: 'Decktaxe-Abrechnung', from: d.from, amount: d.amount, count: d.count,
         text: d.from + ' zahlt dir ' + Economy.fmtEur(d.amount) + ' Decktaxe für ' + (d.stud || 'deinen Hengst') + ' (' + d.count + ' Bedeckungen).' };
     }
+    if (d.type === 'CF') {
+      if (d.confirmKind !== 'payout') return { ok: false, msg: 'Unbekannte Quittung.' };
+      const ps = (state.friendStuds || []).find((x) => x.pendingSettle && x.pendingSettle.id === d.id);
+      if (!ps) return { ok: false, msg: 'Zu dieser Quittung gibt es keine offene Abrechnung (evtl. schon abgeschlossen).' };
+      return { ok: true, action: 'confirm', kind: 'Quittung', from: d.from, amount: d.amount,
+        text: d.from + ' bestätigt den Erhalt von ' + Economy.fmtEur(d.amount) + ' Decktaxe für ' + ps.horse.name + '.' };
+    }
     // SD Deckhengst
     if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
     if (already) return { ok: false, msg: 'Diesen Deckhengst hast du schon übernommen.' };
@@ -399,17 +406,24 @@ const Game = (function () {
     state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
     save(); emit();
   }
-  // Nutzer eines Freundes-Hengstes: offene Decktaxe an den Besitzer auszahlen.
+  // Nutzer eines Freundes-Hengstes: offene Decktaxe an den Besitzer abrechnen.
+  // Die Summe bleibt als "verschickt, wartet auf Bestätigung" hängen, bis der
+  // Besitzer eine Quittung (CF) zurückschickt oder du manuell abschließt.
   function settleFriendStud(studHorseId) {
     const x = (state.friendStuds || []).find((e) => e.horse.id === studHorseId);
-    if (!x || !(x.owed > 0)) return { ok: false, msg: 'Nichts abzurechnen.' };
-    const code = Friend.encodePayout(x.friend, state.friendCode, x.owed, x.owedCount || 0, x.horse.name, Friend.newOfferId());
-    log('Decktaxe-Abrechnung erstellt: ' + Economy.fmtEur(x.owed) + ' an ' + x.friend + ' für ' + x.horse.name + '. Code schicken.', 'info');
+    if (!x) return { ok: false, msg: 'Deckhengst nicht gefunden.' };
+    if (x.pendingSettle) return { ok: false, msg: 'Für ' + x.horse.name + ' läuft schon eine Abrechnung (verschickt in Wo. ' + x.pendingSettle.sentWeek + ') — erst bestätigen lassen oder als erledigt markieren.' };
+    if (!(x.owed > 0)) return { ok: false, msg: 'Nichts abzurechnen.' };
+    const id = Friend.newOfferId();
+    x.pendingSettle = { id: id, amount: x.owed, count: x.owedCount || 0, sentWeek: state.week };
     x.owed = 0; x.owedCount = 0;
+    const code = Friend.encodePayout(x.friend, state.friendCode, x.pendingSettle.amount, x.pendingSettle.count, x.horse.name, id);
+    log('Decktaxe-Abrechnung verschickt: ' + Economy.fmtEur(x.pendingSettle.amount) + ' an ' + x.friend + ' für ' + x.horse.name + ' — wartet auf Bestätigung.', 'info');
     save(); emit();
     return { ok: true, code: code };
   }
-  // Hengst-Besitzer: Decktaxe-Abrechnung annehmen -> Geld gutschreiben.
+  // Hengst-Besitzer: Decktaxe-Abrechnung annehmen -> Geld gutschreiben und
+  // eine Quittung erzeugen, die zurück an den Zahler geht.
   function acceptPayout(text) {
     const p = previewCode(text);
     if (!p.ok || p.action !== 'payout') return { ok: false, msg: p.msg || 'Keine gültige Abrechnung.' };
@@ -417,9 +431,33 @@ const Game = (function () {
     state.cash += d.amount;
     state.stats.totalEarnings += d.amount;
     markRedeemed(d.hash);
-    log('Decktaxe erhalten: ' + Economy.fmtEur(d.amount) + ' von ' + d.from + ' (' + d.count + ' Bedeckungen).', 'good');
+    const confirmCode = Friend.encodeConfirm('payout', d.id, state.friendCode, d.amount);
+    log('Decktaxe erhalten: ' + Economy.fmtEur(d.amount) + ' von ' + d.from + ' (' + d.count + ' Bedeckungen). Quittung zurückschicken.', 'good');
     save(); emit();
-    return { ok: true, amount: d.amount };
+    return { ok: true, amount: d.amount, confirmCode: confirmCode };
+  }
+  // Zahler: Quittung des Besitzers einlösen -> Abrechnung endgültig schließen.
+  function confirmPayout(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'confirm') return { ok: false, msg: p.msg || 'Keine gültige Quittung.' };
+    const d = Friend.decode(text);
+    const x = (state.friendStuds || []).find((e) => e.pendingSettle && e.pendingSettle.id === d.id);
+    if (!x) return { ok: false, msg: 'Keine passende offene Abrechnung.' };
+    markRedeemed(d.hash);
+    log('Decktaxe-Abrechnung bestätigt: ' + x.friend + ' hat ' + Economy.fmtEur(x.pendingSettle.amount) + ' für ' + x.horse.name + ' erhalten.', 'good');
+    x.pendingSettle = null;
+    save(); emit();
+    return { ok: true };
+  }
+  // Zahler: unbestätigte Abrechnung manuell als erledigt abhaken (Notausgang,
+  // falls die Quittung verloren geht).
+  function clearPendingSettle(studHorseId) {
+    const x = (state.friendStuds || []).find((e) => e.horse.id === studHorseId);
+    if (!x || !x.pendingSettle) return { ok: false };
+    log('Decktaxe-Abrechnung für ' + x.horse.name + ' manuell als erledigt markiert (ohne Quittung).', 'warn');
+    x.pendingSettle = null;
+    save(); emit();
+    return { ok: true };
   }
 
   function removeHorse(id) {
@@ -886,6 +924,9 @@ const Game = (function () {
     const debt = (state.friendStuds || []).reduce((sum, x) => sum + (x.owed || 0), 0);
     if (debt > 0) t.push({ icon: '💶', tab: 'gestüt', kind: 'info',
       text: 'Offene Decktaxe an Freunde: ' + Economy.fmtEur(debt) + ' — Abrechnungs-Code erstellen' });
+    const unconfirmed = (state.friendStuds || []).filter((x) => x.pendingSettle);
+    unconfirmed.forEach((x) => t.push({ icon: '🧾', tab: 'gestüt', kind: (state.week - x.pendingSettle.sentWeek > 8 ? 'warn' : 'info'),
+      text: 'Decktaxe-Abrechnung für ' + x.horse.name + ' (' + Economy.fmtEur(x.pendingSettle.amount) + ') an ' + x.friend + ' — noch nicht bestätigt' }));
 
     return t;
   }
@@ -920,6 +961,8 @@ const Game = (function () {
     acceptStud: acceptStud,
     settleFriendStud: settleFriendStud,
     acceptPayout: acceptPayout,
+    confirmPayout: confirmPayout,
+    clearPendingSettle: clearPendingSettle,
     removeFriendStud: removeFriendStud,
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,

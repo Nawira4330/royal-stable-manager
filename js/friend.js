@@ -97,13 +97,18 @@ const Friend = (function () {
   function encodePayout(ownerCode, payerCode, amount, count, studName, payId) {
     return pack('PY', { v: 2, id: payId, from: payerCode, to: ownerCode, amount: Math.max(0, Math.round(amount)), count: count || 0, stud: studName || '' });
   }
+  // Quittung: bestätigt den Erhalt einer Zahlung/Lieferung an den Absender
+  // zurück, damit dieser den Vorgang bei sich abschließen kann.
+  function encodeConfirm(kind, refId, fromCode, amount) {
+    return pack('CF', { v: 2, k: kind, id: refId, from: fromCode, amount: Math.max(0, Math.round(amount || 0)) });
+  }
 
-  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung' };
+  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung', CF: 'Quittung' };
 
   // --- Decoder: prüft Form + Prüfsumme, wirft bei Murks ---------------
   function decode(str) {
     const s = (str || '').trim().replace(/\s+/g, '');
-    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY)\.([a-z0-9]{1,8})\.(.+)$/i);
+    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY|CF)\.([a-z0-9]{1,8})\.(.+)$/i);
     if (!m) throw new Error('Das ist kein gültiger Tauschcode.');
     const type = m[1].toUpperCase();
     if (sig(m[3]) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
@@ -111,7 +116,7 @@ const Friend = (function () {
     try { p = dec(m[3]); } catch (e) { throw new Error('Der Code lässt sich nicht lesen.'); }
     const out = { type: type, typeLabel: TYPE_LABEL[type], hash: sig(m[3]),
       id: p.id || null, from: p.from || '???', to: p.to || null,
-      seller: p.seller || null, public: !!p.public,
+      seller: p.seller || null, public: !!p.public, confirmKind: p.k || null,
       price: p.price || 0, fee: p.fee || 0, amount: p.amount || 0, count: p.count || 0,
       stud: p.stud || '', horse: p.horse || null };
     if ((type === 'OF' || type === 'DL' || type === 'SD') && (!out.horse || !out.horse.genotype)) {
@@ -128,6 +133,7 @@ const Friend = (function () {
     encodeDelivery: encodeDelivery,
     encodeStud: encodeStud,
     encodePayout: encodePayout,
+    encodeConfirm: encodeConfirm,
     decode: decode,
   };
 })();

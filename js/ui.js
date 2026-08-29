@@ -246,11 +246,18 @@ const UI = (function () {
       fmt(x.owed) + '</b> aus ' + (x.owedCount || 0) + ' Bedeckungen</span>' +
       '<button class="small" data-action="settle-stud" data-id="' + x.horse.id + '">Abrechnungs-Code erstellen</button></div>'
     ).join('');
-    if (!offers && !purch && !debts) return '';
+    const pending = (s.friendStuds || []).filter((x) => x.pendingSettle).map((x) =>
+      '<div class="row between"><span>🧾 Abrechnung ' + fmt(x.pendingSettle.amount) + ' für ' + esc(x.horse.name) +
+      ' an ' + esc(x.friend) + ' — <b>wartet auf Bestätigung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
+      '<button class="small secondary" data-action="resend-settle" data-id="' + x.horse.id + '">Code</button> ' +
+      '<button class="small secondary" data-action="clear-settle" data-id="' + x.horse.id + '">als erledigt</button></span></div>'
+    ).join('');
+    if (!offers && !purch && !debts && !pending) return '';
     return '<div class="trade-list" style="margin-top:.6rem">' +
       (offers ? '<div class="small muted">Deine offenen Verkaufsangebote:</div>' + offers : '') +
       (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') +
-      (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen an Freunde:</div>' + debts : '') + '</div>';
+      (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen an Freunde:</div>' + debts : '') +
+      (pending ? '<div class="small muted" style="margin-top:.3rem">Decktaxe-Abrechnungen ohne Bestätigung:</div>' + pending : '') + '</div>';
   }
 
   function herdMiniTable() {
@@ -952,8 +959,23 @@ const UI = (function () {
       const r = Game.settleFriendStud(el.dataset.id);
       if (!r.ok) { toast(r.msg, true); return; }
       UI.showCode('Decktaxe-Abrechnung',
-        'Schick diesen Code an den Hengst-Besitzer. Er nimmt ihn an und bekommt das Deckgeld gutgeschrieben.', r.code);
+        'Schick diesen Code an den Hengst-Besitzer. Er nimmt ihn an und schickt dir eine Quittung zurück, die du hier einlöst.', r.code);
       render();
+      return;
+    }
+    if (a === 'resend-settle') {
+      const x = (Game.state.friendStuds || []).find((e) => e.horse.id === el.dataset.id);
+      if (x && x.pendingSettle) {
+        UI.showCode('Decktaxe-Abrechnung (erneut)', 'Nochmal an den Hengst-Besitzer schicken.',
+          Friend.encodePayout(x.friend, Game.state.friendCode, x.pendingSettle.amount, x.pendingSettle.count, x.horse.name, x.pendingSettle.id));
+      }
+      return;
+    }
+    if (a === 'clear-settle') {
+      const x = (Game.state.friendStuds || []).find((e) => e.horse.id === el.dataset.id);
+      if (x && x.pendingSettle && confirm('Abrechnung über ' + fmt(x.pendingSettle.amount) + ' ohne Quittung als erledigt markieren? Nur tun, wenn der Besitzer den Erhalt bestätigt hat.')) {
+        Game.clearPendingSettle(el.dataset.id); toast('Als erledigt markiert.'); render();
+      }
       return;
     }
     if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
@@ -1111,6 +1133,7 @@ const UI = (function () {
       receive: 'Übernehmen & ' + fmt(p.price) + ' zahlen',
       stud: 'Deckhengst übernehmen',
       payout: 'Decktaxe annehmen (' + fmt(p.amount) + ')',
+      confirm: 'Abrechnung abschließen',
     }[p.action];
     $('#trade-actions').innerHTML =
       '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
@@ -1130,8 +1153,16 @@ const UI = (function () {
     else if (act === 'receive') r = Game.acceptDelivery(tradeRaw);
     else if (act === 'stud') r = Game.acceptStud(tradeRaw);
     else if (act === 'payout') r = Game.acceptPayout(tradeRaw);
+    else if (act === 'confirm') r = Game.confirmPayout(tradeRaw);
     if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
-    if (act === 'payout') { toast('Decktaxe ' + fmt(r.amount) + ' erhalten.'); render(); return; }
+    if (act === 'payout') {
+      showCode('Quittung: Decktaxe erhalten',
+        'Schick diese Quittung an den Zahler zurück, damit er die Abrechnung bei sich abschließen kann.', r.confirmCode);
+      toast('Decktaxe ' + fmt(r.amount) + ' erhalten.');
+      render();
+      return;
+    }
+    if (act === 'confirm') { toast('Abrechnung abgeschlossen.'); render(); return; }
     if (r.code) {
       const hints = {
         bid: 'Schick dieses Kaufgebot zurück an den Verkäufer. Bei Zuschlag bekommst du eine Lieferung.',

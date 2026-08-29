@@ -70,7 +70,9 @@ auf dem Startbildschirm alle Regeln.
   - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
     dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
     Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**
-    die Summe, die du gutgeschrieben bekommst.
+    die Summe, die du gutgeschrieben bekommst, und bekommt von dir eine
+    **Quittung** zurück – erst deren Einlösen schließt die Abrechnung bei ihm ab
+    (so ist geprüft, dass der Code wirklich eingelöst wurde).
   Das Spiel macht **keine Netzwerkanfragen**.
 
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
