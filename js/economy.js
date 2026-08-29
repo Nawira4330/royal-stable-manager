@@ -996,6 +996,26 @@ const Economy = (function () {
     return (state.horses || []).reduce((s, h) => s + (h.insurance ? insurancePremium(state, h, h.insurance.tier) : 0), 0);
   }
 
+  // --- Turnier-Challenge: zwei Pferde unter identischen Bedingungen (gleicher
+  //     Seed = gleiche Tagesform) in einer Sportklasse bewerten.
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function runChallengeScore(state, horse, disc, level, seed) {
+    const show = { type: 'sport', discipline: disc, level: clamp(level | 0, 1, 5), fieldStrength: 30 + level * 12 };
+    const orig = Math.random;
+    Math.random = mulberry32((seed >>> 0) || 1);
+    let sc;
+    try { sc = scoreHorse(horse, show, state.week); }
+    finally { Math.random = orig; }
+    return sc;
+  }
+
   function fmtEur(v) {
     return (Math.round(v)).toLocaleString('de-DE') + ' €';
   }
@@ -1079,6 +1099,8 @@ const Economy = (function () {
     JUNGCHAMP_MAX_AGE: JUNGCHAMP_MAX_AGE,
     jungChampionshipQualified: jungChampionshipQualified,
     runJungChampionship: runJungChampionship,
+    mulberry32: mulberry32,
+    runChallengeScore: runChallengeScore,
     fmtEur: fmtEur,
   };
 })();

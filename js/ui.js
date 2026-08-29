@@ -744,6 +744,7 @@ const UI = (function () {
         <div class="row">
           <button class="small secondary" data-action="offer-horse" data-id="${h.id}">👥 An Freund verkaufen (Code)</button>
           ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="share-stud" data-id="' + h.id + '">👥 Deckhengst freigeben (Code)</button>' : ''}
+          ${adult ? '<button class="small secondary" data-action="make-challenge" data-id="' + h.id + '">⚔ Turnier-Challenge (Code)</button>' : ''}
         </div>
         ${h.sex === 'hengst' && adult && (Model.approvalRank(h.zuchtzulassung) >= 2 || h.studService) ? studServiceBlock(h)
           : (h.sex === 'hengst' && adult ? '<div class="small muted">🐴 Eigene Deckstation für fremde Zuchtstuten: erst nach Körung/Eintragung möglich.</div>' : '')}
@@ -1541,6 +1542,20 @@ const UI = (function () {
       render();
       return;
     }
+    if (a === 'make-challenge') {
+      const h = Game.getHorse(el.dataset.id);
+      const best = Model.bestDiscipline(h);
+      const disc = prompt('Turnier-Challenge für „' + h.name + '".\nDisziplin (' + DISC.join(', ') + '):', best);
+      if (disc == null) return;
+      if (DISC.indexOf(disc) === -1) { toast('Unbekannte Disziplin.', true); return; }
+      const lvl = prompt('Klasse 1–5 (1 = E … 5 = S):', '3');
+      if (lvl == null) return;
+      const r = Game.createChallenge(h.id, disc, parseInt(lvl, 10));
+      if (!r.ok) { toast(r.msg, true); return; }
+      UI.showCode('Turnier-Challenge: ' + h.name + ' (' + esc(disc) + ' Kl. ' + parseInt(lvl, 10) + ')',
+        'Schick den Code an einen Freund. Er tritt mit einem eigenen Pferd an — beide werden mit demselben Seed (gleiche Tagesform) bewertet.', r.code);
+      return;
+    }
     if (a === 'share-stud') {
       const h = Game.getHorse(el.dataset.id);
       const def = 800 + Math.round(Game.valuation(h) * 0.03);
@@ -1772,12 +1787,20 @@ const UI = (function () {
     const p = Game.previewCode(raw);
     if (!p.ok) { toast(p.msg, true); return; }
     tradeRaw = raw;
-    $('#trade-title').textContent = p.kind + ' von ' + p.from;
+    $('#trade-title').textContent = p.kind + ' von ' + (Game.friendLabel ? Game.friendLabel(p.from) : p.from);
     let body = '';
     if (p.horse && p.horse.genotype) body += packedHorseCard(p.horse);
     if (p.text) body += '<p>' + esc(p.text) + '</p>';
     if (p.action === 'bid') body += '<div class="row between"><span>Preis</span><b>' + fmt(p.price) + '</b></div>';
     if (p.action === 'stud') body += '<div class="row between"><span>Deckgeld je Bedeckung</span><b>' + fmt(p.fee) + '</b></div>';
+    if (p.action === 'challenge') {
+      const elig = Game.state.horses.filter((h) => ageYears(h) >= Model.MATURITY_YEARS && !h.offered);
+      body += elig.length
+        ? '<label class="small">Dein Pferd für ' + esc(p.disc) + ' Kl. ' + p.level + ':<br><select id="challenge-horse">' +
+          elig.map((h) => '<option value="' + h.id + '">' + esc(h.name) + ' — ' + esc(p.disc) + ' ' + Math.round(h.skill[p.disc]) +
+          ' / Potenzial ' + Math.round(h.potential[p.disc]) + '</option>').join('') + '</select></label>'
+        : '<p class="tag warn small">Kein einsatzfähiges Pferd (≥ 3 Jahre) im Stall.</p>';
+    }
     if (p.warn) body += '<p class="tag warn small">' + esc(p.warn) + '</p>';
     $('#trade-body').innerHTML = body;
 
@@ -1790,6 +1813,8 @@ const UI = (function () {
       confirm: 'Abrechnung abschließen',
       reissue: 'Quittung erneut erzeugen',
       ranking: 'In Freundes-Rangliste übernehmen',
+      challenge: 'Challenge starten',
+      challengeResult: 'Ergebnis ansehen',
     }[p.action];
     $('#trade-actions').innerHTML =
       '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
@@ -1812,8 +1837,25 @@ const UI = (function () {
     else if (act === 'confirm') r = Game.confirmPayout(tradeRaw);
     else if (act === 'reissue') r = Game.reissueReceipt(tradeRaw);
     else if (act === 'ranking') r = Game.importRanking(tradeRaw);
+    else if (act === 'challenge') {
+      const sel = $('#challenge-horse');
+      r = sel && sel.value ? Game.runChallenge(tradeRaw, sel.value) : { ok: false, msg: 'Kein Pferd gewählt.' };
+    }
+    else if (act === 'challengeResult') r = Game.importChallengeResult(tradeRaw);
     if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
     if (act === 'ranking') { toast('Rangliste von ' + esc(r.stud || 'Freund') + ' übernommen.'); render(); return; }
+    if (act === 'challenge') {
+      showCode('Challenge-Ergebnis: ' + (r.iWin ? 'du gewinnst 🏆' : 'du verlierst'),
+        r.myName + ' ' + r.myScore.toFixed(1) + ' — ' + r.oppName + ' (' + r.oppStud + ') ' + r.oppScore.toFixed(1) +
+        '.  Schick diesen Code zurück, damit der Herausforderer das Ergebnis sieht.', r.resultCode);
+      render();
+      return;
+    }
+    if (act === 'challengeResult') {
+      toast((r.iWin ? 'Challenge gewonnen 🏆 ' : 'Challenge verloren ') + r.myScore.toFixed(1) + ' : ' + r.theirScore.toFixed(1));
+      render();
+      return;
+    }
     if (act === 'payout' || act === 'reissue') {
       showCode('Quittung: Decktaxe erhalten',
         'Schick diese Quittung an den Zahler zurück, damit er die Abrechnung bei sich abschließen kann.', r.confirmCode);

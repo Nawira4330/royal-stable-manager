@@ -619,6 +619,57 @@ const Game = (function () {
     return { ok: true, stud: d.stud, points: d.points };
   }
 
+  // --- Turnier-Challenge: ein Pferd + Disziplin/Klasse gegen Freunde stellen.
+  function createChallenge(horseId, disc, level) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (DISC.indexOf(disc) === -1) return { ok: false, msg: 'Unbekannte Disziplin.' };
+    if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung (< 3 J.).' };
+    level = clamp(Math.round(level || 1), 1, 5);
+    const seed = Model.randInt(1, 2000000000);
+    const code = Friend.encodeChallenge(state.friendCode, state.studName, h, disc, level, seed, state.week);
+    log('⚔ Turnier-Challenge erstellt: ' + h.name + ' — ' + disc + ' Klasse ' + level + '. Code an Freunde schicken.', 'info');
+    return { ok: true, code: code };
+  }
+  // Empfänger: mit einem eigenen Pferd gegen das Challenge-Pferd antreten.
+  function runChallenge(text, myHorseId) {
+    let d;
+    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
+    if (d.type !== 'CG') return { ok: false, msg: 'Das ist kein Challenge-Code.' };
+    if (d.from === state.friendCode) return { ok: false, msg: 'Das ist deine eigene Challenge.' };
+    const mine = getHorse(myHorseId);
+    if (!mine) return { ok: false, msg: 'Wähle ein eigenes Pferd.' };
+    if (Model.ageYears(mine, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: mine.name + ' ist zu jung (< 3 J.).' };
+    const opp = Model.hydratePackedHorse(d.horse, state.week, 'Challenge');
+    const myScore = Economy.runChallengeScore(state, mine, d.disc, d.level, d.seed);
+    const oppScore = Economy.runChallengeScore(state, opp, d.disc, d.level, d.seed);
+    const iWin = myScore >= oppScore;
+    const resultCode = Friend.encodeChallengeResult(state.friendCode, state.studName, mine, myScore, oppScore, d.disc, d.level, d.seed, state.week);
+    log('⚔ Challenge ' + d.disc + ' Kl. ' + d.level + ' gegen ' + (d.stud || friendLabel(d.from)) + ': ' + mine.name + ' ' +
+      myScore.toFixed(1) + ' — ' + opp.name + ' ' + oppScore.toFixed(1) + ' → ' + (iWin ? 'du gewinnst!' : 'du verlierst.'),
+      iWin ? 'good' : 'warn');
+    rememberFriend(d.from);
+    save(); emit();
+    return { ok: true, myScore: myScore, oppScore: oppScore, iWin: iWin, disc: d.disc, level: d.level,
+      oppName: opp.name, oppStud: d.stud || friendLabel(d.from), myName: mine.name, resultCode: resultCode };
+  }
+  // Herausforderer: das zurückgeschickte Ergebnis ansehen.
+  function importChallengeResult(text) {
+    let d;
+    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
+    if (d.type !== 'CR') return { ok: false, msg: 'Das ist kein Challenge-Ergebnis-Code.' };
+    if (d.from === state.friendCode) return { ok: false, msg: 'Das ist dein eigenes Ergebnis.' };
+    // d.myScore = Wertung des Absenders (Gegner aus deiner Sicht), d.oppScore = deine.
+    const theirScore = d.myScore, myScore = d.oppScore;
+    const iWin = myScore >= theirScore;
+    rememberFriend(d.from);
+    log('⚔ Challenge-Ergebnis von ' + (d.stud || friendLabel(d.from)) + ' (' + d.disc + ' Kl. ' + d.level + '): ' +
+      (d.horse && d.horse.name ? d.horse.name : 'ihr Pferd') + ' ' + theirScore.toFixed(1) + ' — dein Pferd ' + myScore.toFixed(1) +
+      ' → ' + (iWin ? 'du gewinnst!' : 'du verlierst.'), iWin ? 'good' : 'warn');
+    save(); emit();
+    return { ok: true, iWin: iWin, myScore: myScore, theirScore: theirScore, stud: d.stud || friendLabel(d.from), oppName: d.horse && d.horse.name };
+  }
+
   // --- Freundes-Tausch: Codes weitergeben, kein Server ------------------
   function markRedeemed(hash) {
     state.redeemedCodes = state.redeemedCodes || [];
@@ -721,6 +772,19 @@ const Game = (function () {
       if (d.from === mine) return { ok: false, msg: 'Das ist deine eigene Rangliste.' };
       return { ok: true, action: 'ranking', kind: 'Saison-Rangliste', from: d.from,
         text: (d.stud || d.from) + ': ' + d.points + ' Saisonpunkte, ' + d.prestige + ' Prestige (Jahr ' + d.year + ', Wo. ' + d.week + ').' };
+    }
+    if (d.type === 'CG') {
+      if (d.from === mine) return { ok: false, msg: 'Das ist deine eigene Challenge.' };
+      return { ok: true, action: 'challenge', kind: 'Turnier-Challenge', from: d.from, horse: d.horse,
+        disc: d.disc, level: d.level,
+        text: (d.stud || friendLabel(d.from)) + ' fordert dich heraus: ' + (d.horse ? d.horse.name : '?') + ' in ' + d.disc + ' Klasse ' + d.level + '. Wähle dein Pferd.' };
+    }
+    if (d.type === 'CR') {
+      if (d.from === mine) return { ok: false, msg: 'Das ist dein eigenes Ergebnis.' };
+      const myS = d.oppScore, theirS = d.myScore;
+      return { ok: true, action: 'challengeResult', kind: 'Challenge-Ergebnis', from: d.from, horse: d.horse,
+        text: (d.stud || friendLabel(d.from)) + ' (' + d.disc + ' Kl. ' + d.level + '): ' + (d.horse ? d.horse.name : 'ihr Pferd') + ' ' +
+          theirS.toFixed(1) + ' — dein Pferd ' + myS.toFixed(1) + ' → ' + (myS >= theirS ? 'du gewinnst!' : 'du verlierst.') };
     }
     // SD Deckhengst
     if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
@@ -1702,6 +1766,9 @@ const Game = (function () {
     friendLabel: friendLabel,
     shareRanking: shareRanking,
     importRanking: importRanking,
+    createChallenge: createChallenge,
+    runChallenge: runChallenge,
+    importChallengeResult: importChallengeResult,
     createOffer: createOffer,
     cancelOffer: cancelOffer,
     previewCode: previewCode,
