@@ -109,7 +109,9 @@ auf dem Startbildschirm alle Regeln.
     mit demselben Seed bewertet. Ergebnis-Code zeigt beide Wertungen.
   - **Co-Zucht** – Deckhengst ohne Deckgeld gegen festen Prozentanteil
     (1–80 %) am Verkaufserlös jeder Nachzucht; Anteil wird beim Verkauf
-    abgezogen und per Abrechnungs-Code/Quittung ausgezahlt.
+    abgezogen und per Abrechnungs-Code/Quittung ausgezahlt. „Entfernen"
+    legt den Hengst bei offener Abrechnung nur still (kein Decken mehr),
+    bis alles verkauft und beglichen ist.
   - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
     dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
     Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**

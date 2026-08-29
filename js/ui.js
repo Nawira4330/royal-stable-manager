@@ -904,7 +904,7 @@ const UI = (function () {
         Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + (friend ? ', Freund ' + friend : '') + ')</option>';
     };
     const sireStud = (s.studRoster || []).map((x) => studOpt(x, null)).join('');
-    const sireFriend = (s.friendStuds || []).map((x) => studOpt(x, x.friend)).join('');
+    const sireFriend = (s.friendStuds || []).filter((x) => !x.retired).map((x) => studOpt(x, x.friend)).join('');
     const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
       (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
       (sireStud ? '<optgroup label="Deckstation">' + sireStud + '</optgroup>' : '') +
@@ -969,7 +969,7 @@ const UI = (function () {
     //     keinen Hengst.
     const f = studFilter;
     const num = (v) => (v === '' || v == null ? null : parseFloat(v));
-    const friendStuds = s.friendStuds || [];
+    const friendStuds = (s.friendStuds || []).filter((x) => !x.retired);
     const allStuds = roster.map((x) => ({ e: x, friend: null })).concat(friendStuds.map((x) => ({ e: x, friend: x.friend })));
     let list = allStuds.map(({ e, friend }) => ({ x: e, h: e.horse, friend: friend, best: Model.bestDiscipline(e.horse) }));
     list = list.filter(({ h, x }) => {

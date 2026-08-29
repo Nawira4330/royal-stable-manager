@@ -193,7 +193,7 @@ const Game = (function () {
     }
     const entry = (state.studRoster || []).find((x) => x.horse.id === id);
     if (entry) return { horse: entry.horse, external: true, fee: entry.studFee };
-    const fr = (state.friendStuds || []).find((x) => x.horse.id === id);
+    const fr = (state.friendStuds || []).find((x) => x.horse.id === id && !x.retired);
     if (fr) return { horse: fr.horse, external: true, fee: fr.coBreed ? 0 : fr.studFee, friend: fr.friend, coBreed: fr.coBreed, coShare: fr.share };
     return null;
   }
@@ -919,22 +919,44 @@ const Game = (function () {
     const cb = h.coBred;
     const share = Math.round(price * (cb.share || 0) / 100);
     if (share <= 0) return;
-    state.cash -= share;
     const entry = (state.friendStuds || []).find((x) => x.coBreed && x.friend === cb.partner);
     if (entry) {
+      state.cash -= share;
       entry.owed = (entry.owed || 0) + share;
       entry.owedCount = (entry.owedCount || 0) + 1;
       log('🤝 Co-Zucht: ' + cb.share + ' %-Anteil ' + Economy.fmtEur(share) + ' aus dem Verkauf von ' + h.name +
         ' geht an ' + friendLabel(cb.partner) + ' (offen: ' + Economy.fmtEur(entry.owed) + ').', 'cost');
     } else {
-      log('🤝 Co-Zucht-Anteil ' + Economy.fmtEur(share) + ' aus ' + h.name + ' fällt an — ' +
-        friendLabel(cb.partner) + ' ist nicht mehr in deiner Deckstation, das Geld verfällt.', 'warn');
+      // Kein Eintrag mehr hinterlegt (nur durch bearbeitete Spielstände möglich):
+      // kein Abrechnungsweg -> kein Abzug, voller Erlös bleibt bei dir.
+      log('🤝 Kein Co-Zucht-Partner für ' + h.name + ' hinterlegt — der volle Erlös bleibt bei dir.', 'info');
     }
   }
 
+  function coBreedObligationsOpen(entry) {
+    return (entry.owed || 0) > 0 || !!entry.pendingSettle ||
+      state.horses.some((h) => h.coBred && h.coBred.partner === entry.friend);
+  }
   function removeFriendStud(horseId) {
-    state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
+    const x = (state.friendStuds || []).find((e) => e.horse.id === horseId);
+    // Co-Zucht-Hengst mit offener Abrechnung oder noch nicht verkaufter
+    // Nachzucht: nicht löschen, nur „stilllegen" — nicht mehr zum Decken, aber
+    // die Anteile werden weiter angeschrieben und lassen sich abrechnen.
+    if (x && x.coBreed && coBreedObligationsOpen(x)) {
+      x.retired = true;
+      log('🤝 ' + x.horse.name + ' wird nicht mehr zum Decken genutzt — die Co-Zucht-Abrechnung mit ' +
+        friendLabel(x.friend) + ' bleibt offen, bis alle Nachzuchten verkauft und abgerechnet sind.', 'info');
+      save(); emit();
+      return;
+    }
+    state.friendStuds = (state.friendStuds || []).filter((e) => e.horse.id !== horseId);
     save(); emit();
+  }
+  // Stillgelegte, vollständig abgerechnete Co-Zucht-Einträge aufräumen.
+  function cleanupRetiredCoStuds() {
+    const before = (state.friendStuds || []).length;
+    state.friendStuds = (state.friendStuds || []).filter((x) => !(x.retired && !coBreedObligationsOpen(x)));
+    return before - state.friendStuds.length;
   }
   // Nutzer eines Freundes-Hengstes: offene Decktaxe an den Besitzer abrechnen.
   // Die Summe bleibt als "verschickt, wartet auf Bestätigung" hängen, bis der
@@ -988,8 +1010,11 @@ const Game = (function () {
     const x = (state.friendStuds || []).find((e) => e.pendingSettle && e.pendingSettle.id === d.id);
     if (!x) return { ok: false, msg: 'Keine passende offene Abrechnung.' };
     markRedeemed(d.hash);
-    log('Decktaxe-Abrechnung bestätigt: ' + x.friend + ' hat ' + Economy.fmtEur(x.pendingSettle.amount) + ' für ' + x.horse.name + ' erhalten.', 'good');
+    log((x.coBreed ? '🤝 Co-Zucht-Abrechnung' : 'Decktaxe-Abrechnung') + ' bestätigt: ' + friendLabel(x.friend) +
+      ' hat ' + Economy.fmtEur(x.pendingSettle.amount) + ' für ' + x.horse.name + ' erhalten.', 'good');
     x.pendingSettle = null;
+    const cleaned = cleanupRetiredCoStuds();
+    if (cleaned) log('🤝 Co-Zucht mit ' + friendLabel(x.friend) + ' vollständig abgerechnet — Hengst aus der Deckstation entfernt.', 'info');
     save(); emit();
     return { ok: true };
   }
