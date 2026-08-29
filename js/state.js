@@ -238,7 +238,11 @@ const Game = (function () {
     state.cash -= signOn;
     state.staff.push(cand);
     state.staffMarket.splice(idx, 1);
-    log('Eingestellt: ' + cand.name + ' (' + (cand.role === 'bereiter' ? 'Bereiter/in — ' + cand.disciplines.join(', ') : 'Stallmeister/in') + ', Gehalt ' + Economy.fmtEur(cand.salary) + '/Wo., Antrittsgeld -' + Economy.fmtEur(signOn) + ').', 'cost');
+    const roleTxt = cand.role === 'bereiter' ? 'Bereiter/in — ' + cand.disciplines.join(', ')
+      : cand.role === 'stallmeister' ? 'Stallmeister/in'
+      : cand.role === 'tierarzt' ? 'Tierarzt/in'
+      : 'Vermarkter/in';
+    log('Eingestellt: ' + cand.name + ' (' + roleTxt + ', Gehalt ' + Economy.fmtEur(cand.salary) + '/Wo., Antrittsgeld -' + Economy.fmtEur(signOn) + ').', 'cost');
     save(); emit();
     return { ok: true };
   }
@@ -978,6 +982,7 @@ const Game = (function () {
       const dY = Model.ageYears(dam, state.week);
       let compRisk = 0.04 + Math.max(0, dY - 14) * 0.02 + Math.max(0, (75 - dam.health)) * 0.004 + result.coi * 0.5;
       compRisk *= [1, 0.7, 0.45][state.facilities.vet || 0];
+      compRisk *= Economy.staffVetMult(state);
       const cRoll = Math.random();
       if (cRoll < compRisk * 0.28 && dam.health < 40) {
         // sehr selten: die Stute überlebt die Geburt nicht.
@@ -989,7 +994,7 @@ const Game = (function () {
         Model.injureHealth(dam, Model.randInt(3, 9), ['Immunsystem']);
         return;
       } else if (cRoll < compRisk) {
-        const bill = 500 + Model.randInt(0, 1200);
+        const bill = Math.round((500 + Model.randInt(0, 1200)) * Economy.staffVetMult(state));
         state.cash -= bill;
         Model.injureHealth(dam, Model.randInt(4, 10), ['Herz-Kreislauf']);
         result.foal._complication = Model.randInt(6, 16);
@@ -1022,10 +1027,10 @@ const Game = (function () {
       s.weeks += 1;
       const ref = marketPrice(h);
       const ratio = s.price / Math.max(1, ref);
-      let p = clamp(0.55 / Math.pow(ratio, 2.2), 0.02, 0.9) * mkt.saleSpeed;
+      let p = clamp(0.55 / Math.pow(ratio, 2.2), 0.02, 0.9) * mkt.saleSpeed * Economy.staffSalesMult(state);
       p = clamp(p + s.weeks * 0.03, 0, 0.95);
       if (Math.random() < p) {
-        const paid = Math.round(s.price * mkt.priceMult);
+        const paid = Math.round(s.price * mkt.priceMult * (1 + (Economy.staffSalesMult(state) - 1) * 0.5));
         state.cash += paid;
         state.stats.horsesSold += 1;
         state.stats.totalEarnings += paid;
@@ -1209,7 +1214,7 @@ const Game = (function () {
         state.nextFarrierWeek = state.week + Economy.FARRIER_EVERY;
       }
       if (state.week >= (state.nextVetRoutineWeek || 0)) {
-        const bill = state.horses.length * Economy.VETROUTINE_COST;
+        const bill = Math.round(state.horses.length * Economy.VETROUTINE_COST * Economy.staffVetMult(state));
         if (state.cash >= bill) {
           state.cash -= bill;
           log('Wurmkur & Impfung, ganzer Bestand: -' + Economy.fmtEur(bill) + '.', 'cost');
@@ -1261,7 +1266,7 @@ const Game = (function () {
     // schlechte erhöht (care.eventMult).
     if (roll < 0.3 * care.eventMult * Economy.staffEventMult(state) && state.horses.length) {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
-      const bill = 300 + Model.randInt(0, 900);
+      const bill = Math.round((300 + Model.randInt(0, 900)) * Economy.staffVetMult(state));
       state.cash -= bill;
       const ailments = [
         { key: ['Atemwege'], name: 'einen Atemwegsinfekt' },

@@ -302,14 +302,27 @@ const UI = (function () {
     </div>`;
   }
 
+  const STAFF_ICON = { bereiter: '🏇', stallmeister: '🧹', tierarzt: '🩺', vermarkter: '📣' };
+  function staffRoleName(x) {
+    return x.role === 'bereiter' ? 'Bereiter/in — ' + esc(x.disciplines.join(', '))
+      : x.role === 'stallmeister' ? 'Stallmeister/in'
+      : x.role === 'tierarzt' ? 'Tierarzt/in'
+      : 'Vermarkter/in';
+  }
+  function staffRoleEffect(x) {
+    if (x.role === 'bereiter') return 'mehr Trainingszuwachs in diesen Disziplinen';
+    if (x.role === 'stallmeister') return '−20 % Pflege, seltener Zwischenfälle';
+    if (x.role === 'tierarzt') return 'weniger Tierarztkosten, Geburts- & Krankheitsrisiko';
+    return 'besserer Verkaufserlös/-tempo, Deckstation & Pensionsstall';
+  }
   function staffCard(s) {
     const mine = (s.staff || []).map((x) =>
-      '<div class="row between"><span>' + (x.role === 'bereiter' ? '🏇 Bereiter/in ' : '🧹 Stallmeister/in ') + esc(x.name) +
-      ' <span class="muted small">(Können ' + x.skill + (x.role === 'bereiter' ? ', ' + esc(x.disciplines.join(', ')) : ', −20 % Pflege/Zwischenfälle') + ', ' + fmt(x.salary) + '/Wo.)</span></span>' +
+      '<div class="row between"><span>' + (STAFF_ICON[x.role] || '🧑') + ' ' + staffRoleName(x) + ' <span class="muted small">' + esc(x.name) +
+      ' · Können ' + x.skill + ' · ' + fmt(x.salary) + '/Wo. · ' + staffRoleEffect(x) + '</span></span>' +
       '<button class="small danger" data-action="fire-staff" data-id="' + x.id + '">entlassen</button></div>').join('') || '<p class="small muted">Noch kein Personal.</p>';
     const cands = (s.staffMarket || []).map((x, i) =>
-      '<div class="row between"><span>' + (x.role === 'bereiter' ? '🏇 Bereiter/in — ' + esc(x.disciplines.join(', ')) : '🧹 Stallmeister/in') +
-      ' · Können ' + x.skill + ' · ' + fmt(x.salary) + '/Wo. <span class="muted small">' + esc(x.name) + '</span></span>' +
+      '<div class="row between"><span>' + (STAFF_ICON[x.role] || '🧑') + ' ' + staffRoleName(x) +
+      ' · Können ' + x.skill + ' · ' + fmt(x.salary) + '/Wo. <span class="muted small">' + esc(x.name) + ' — ' + staffRoleEffect(x) + '</span></span>' +
       '<button class="small" data-action="hire-staff" data-idx="' + i + '">einstellen (' + fmt(x.salary * 2) + ')</button></div>').join('');
     return `<div class="card stack">
       <h3>🧑‍🌾 Personal <span class="muted small">(${(s.staff || []).length}/${Economy.maxStaff(s)})</span></h3>

@@ -38,9 +38,11 @@ auf dem Startbildschirm alle Regeln.
   Trainingsanlage, Tierarzt/Reproduktion, Vermarktung), **Futter & Pflege**
   (je 3 Stufen: mehr Kosten je Pferd/Woche, dafür mehr Energie/Training/
   Fruchtbarkeit bzw. weniger Krankheiten, Turnier-Bonus, langsamerer
-  Altersverschleiß), **Personal** (Bereiter mit Spezialdisziplinen → mehr
-  Trainingszuwachs; Stallmeister → weniger Pflegekosten und Krankheits-
-  ereignisse), **Sponsoren** (ab Prestige 60: Wochenzahlung gegen
+  Altersverschleiß), **Personal** (Bereiter → mehr Trainingszuwachs in ihren
+  Disziplinen; Stallmeister → weniger Pflegekosten/Zwischenfälle; Tierarzt →
+  weniger Tierarztkosten und Geburts-/Krankheitsrisiko; Vermarkter → mehr
+  Verkaufserlös, Deckstation- und Pensionsstall-Einnahmen), **Sponsoren**
+  (ab Prestige 60: Wochenzahlung gegen
   Startauflage + Abschlussbonus), **Zuchtaufträge** (Verbände/Kunden suchen
   Pferde nach Vorgabe: Prämie + Prestige, verfallene Aufträge kosten Prestige),
   **Zuchtbuch/Zuchtstempel** (Präfix wird eigenen Nachzuchten vorangestellt),

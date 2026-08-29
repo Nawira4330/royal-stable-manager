@@ -222,16 +222,20 @@ const Economy = (function () {
     return list;
   }
 
-  // --- Personal: Bereiter (heben die Trainingswirkung in ihren Disziplinen)
-  //     und Stallmeister (senkt Pflege-/Routinekosten, weniger Zwischenfälle).
+  // --- Personal. Vier Rollen:
+  //     • Bereiter/in    – hebt die Trainingswirkung in 1–2 Disziplinen
+  //     • Stallmeister/in – −20 % Pflegekosten, seltener Zwischenfälle
+  //     • Tierarzt/in     – senkt Tierarztkosten, Geburts- und Krankheitsrisiko
+  //     • Vermarkter/in   – hebt Verkaufserlös/-tempo, Deckstation & Pensionsstall
   const STAFF_FIRST = ['Anna', 'Lena', 'Marie', 'Julia', 'Sophie', 'Nele', 'Paul', 'Jan', 'Tom', 'Ben', 'Finn', 'Lars'];
   const STAFF_LAST = ['Berger', 'Krause', 'Wolf', 'Frank', 'Böhm', 'Sander', 'Reuter', 'Hahn', 'Vogt', 'Kern'];
+  const STAFF_ROLE_POOL = ['bereiter', 'bereiter', 'bereiter', 'stallmeister', 'tierarzt', 'vermarkter'];
   function rollStaffMarket(state) {
     const tier = prestigeTier(state).stars;
     const n = 3 + Model.randInt(0, 1);
     const out = [];
     for (let i = 0; i < n; i++) {
-      const role = i === 0 && Math.random() < 0.35 ? 'stallmeister' : 'bereiter';
+      const role = i === 0 ? 'bereiter' : STAFF_ROLE_POOL[Model.randInt(0, STAFF_ROLE_POOL.length - 1)];
       const skill = clamp(Math.round(Model.gauss(45 + tier * 8, 16)), 15, 96);
       const name = STAFF_FIRST[Model.randInt(0, STAFF_FIRST.length - 1)] + ' ' + STAFF_LAST[Model.randInt(0, STAFF_LAST.length - 1)];
       let discs = [];
@@ -239,14 +243,20 @@ const Economy = (function () {
         const pool = DISC.slice().sort(() => Math.random() - 0.5);
         discs = pool.slice(0, 2);
       }
-      const salary = role === 'stallmeister'
-        ? 300 + Math.round(skill * 6)
+      const salary = role === 'tierarzt' ? 360 + Math.round(skill * 8)
+        : role === 'stallmeister' ? 300 + Math.round(skill * 6)
+        : role === 'vermarkter' ? 260 + Math.round(skill * 7)
         : 220 + Math.round(skill * 7);
       out.push({ id: 's' + Math.random().toString(36).slice(2, 7), name: name, role: role, disciplines: discs, skill: skill, salary: salary });
     }
     return out;
   }
   function maxStaff(state) { return 2 + (state.facilities.arena || 0); }
+  function bestStaffSkill(state, role) {
+    let best = 0;
+    (state.staff || []).forEach((x) => { if (x.role === role) best = Math.max(best, x.skill); });
+    return best;
+  }
   // Trainings-Multiplikator-Bonus durch Bereiter für eine Disziplin.
   function staffTrainBonus(state, disc) {
     let best = 0;
@@ -255,8 +265,22 @@ const Economy = (function () {
     });
     return 1 + best / 220;   // bis ~ +0.44
   }
+  // Stallmeister + Tierarzt senken die Häufigkeit von Zwischenfällen.
   function staffEventMult(state) {
-    return (state.staff || []).some((x) => x.role === 'stallmeister') ? 0.8 : 1;
+    let m = 1;
+    if ((state.staff || []).some((x) => x.role === 'stallmeister')) m *= 0.8;
+    if (bestStaffSkill(state, 'tierarzt') > 0) m *= 0.85;
+    return m;
+  }
+  // Tierarzt/in: Multiplikator auf Tierarztkosten und Geburts-/Krankheitsrisiko.
+  function staffVetMult(state) {
+    const s = bestStaffSkill(state, 'tierarzt');
+    return s ? clamp(0.85 - s / 200, 0.35, 0.9) : 1;
+  }
+  // Vermarkter/in: Multiplikator auf Verkaufserlös/-tempo, Deckstation, Pension.
+  function staffSalesMult(state) {
+    const s = bestStaffSkill(state, 'vermarkter');
+    return s ? 1 + s / 300 : 1;   // bis ~ +0.32
   }
 
   // --- Sponsoren: ab etwas Prestige tauchen Vertragsangebote auf. Wöchentliche
@@ -822,7 +846,8 @@ const Economy = (function () {
   //     Wocheneinkommen je Box, skaliert mit Rang und Pflegestufe. Belegte
   //     Gastboxen zählen gegen die Stallkapazität.
   function boardIncomePerBox(state) {
-    return Math.round(45 + state.prestige * 0.22 + (state.careLevel != null ? state.careLevel : 1) * 12 + prestigeTier(state).stars * 8);
+    const base = 45 + state.prestige * 0.22 + (state.careLevel != null ? state.careLevel : 1) * 12 + prestigeTier(state).stars * 8;
+    return Math.round(base * staffSalesMult(state));
   }
   function freeStallSlots(state) {
     return Math.max(0, stallCapacity(state) - state.horses.length - (state.boarding || 0));
@@ -838,8 +863,8 @@ const Economy = (function () {
     const val = Model.valuation(horse, state.week, prestigeMult(state));
     const fair = Math.max(400, val * 0.05);
     const attractiveness = clamp(fair / Math.max(horse.studService.fee, 1), 0.15, 1.7);
-    const base = 0.22 + prestigeTier(state).stars * 0.12 + (horse.quality - 0.4) * 0.5 + rank * 0.12;
-    return clamp(base * attractiveness, 0, 2.4);
+    const base = (0.22 + prestigeTier(state).stars * 0.12 + (horse.quality - 0.4) * 0.5 + rank * 0.12) * staffSalesMult(state);
+    return clamp(base * attractiveness, 0, 2.6);
   }
 
   function fmtEur(v) {
@@ -867,8 +892,11 @@ const Economy = (function () {
     seasonEnergyBonus: seasonEnergyBonus,
     rollStaffMarket: rollStaffMarket,
     maxStaff: maxStaff,
+    bestStaffSkill: bestStaffSkill,
     staffTrainBonus: staffTrainBonus,
     staffEventMult: staffEventMult,
+    staffVetMult: staffVetMult,
+    staffSalesMult: staffSalesMult,
     rollSponsorOffers: rollSponsorOffers,
     rollBreedingOrders: rollBreedingOrders,
     makeBreedingOrder: makeBreedingOrder,
