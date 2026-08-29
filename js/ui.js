@@ -300,6 +300,7 @@ const UI = (function () {
       <div class="row between"><span>Gesamteinnahmen</span><b>${fmt(s.stats.totalEarnings || 0)}</b></div>
       <div class="row between"><span>Bester Einzelverkauf</span><b>${bs ? esc(bs.name) + ' — ' + fmt(bs.amount) : '—'}</b></div>
       <div class="row between"><span>Größter Turniertag</span><b>${fmt(s.stats.biggestWin || 0)}</b></div>
+      ${Economy.insurancePremiums(s) > 0 || s.stats.insuranceClaims ? `<div class="row between"><span>Versicherung: Prämie/Wo. · erstattet</span><b>${fmt(Economy.insurancePremiums(s))} · ${fmt(s.stats.insuranceClaims || 0)}</b></div>` : ''}
       <div class="row between"><span>Bestandswert</span><b>${fmt(s.horses.reduce((a, x) => a + Game.valuation(x), 0))}</b></div>
     </div>`;
   }
@@ -673,6 +674,7 @@ const UI = (function () {
         ${pts}
         ${lpBlock(h)}
         ${showRec}
+        ${h.offered ? '' : insuranceBlock(h)}
         ${orderMatchBlock(h)}
 
         <hr style="border:none;border-top:1px solid var(--border)">
@@ -697,6 +699,32 @@ const UI = (function () {
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
+  }
+
+  function insuranceBlock(h) {
+    const s = Game.state;
+    const y = ageYears(h);
+    const opP = Economy.insurancePremium(s, h, 'op');
+    const volP = Economy.insurancePremium(s, h, 'voll');
+    const cur = h.insurance ? h.insurance.tier : '';
+    const opt = (val, label) => '<option value="' + val + '"' + (cur === val ? ' selected' : '') + '>' + label + '</option>';
+    let status = '';
+    if (h.insurance) {
+      const weeksIn = s.week - (h.insurance.since || 0);
+      const vetOk = weeksIn >= Economy.INSURE_VET_WAIT;
+      const lifeOk = h.insurance.tier === 'voll' && weeksIn >= Economy.INSURE_LIFE_WAIT;
+      status = '<div class="small muted">seit Wo. ' + (h.insurance.since || 0) + ' · OP-Erstattung ' + (vetOk ? 'aktiv' : 'Wartezeit') +
+        (h.insurance.tier === 'voll' ? ' · Lebensschutz ' + (lifeOk ? 'aktiv' : 'Wartezeit') : '') + '</div>';
+    }
+    const blocked = !h.insurance && (y > 20 || h.health < 40);
+    return '<div class="card" style="background:var(--surface-2)">' +
+      '<div class="row between"><b class="small">🛡️ Versicherung</b>' +
+      '<select data-action="set-insurance" data-id="' + h.id + '"' + (blocked ? ' disabled' : '') + '>' +
+        opt('', 'keine') + opt('op', 'OP-Schutz — ' + fmt(opP) + '/Wo.') + opt('voll', 'Vollschutz — ' + fmt(volP) + '/Wo.') +
+      '</select></div>' + status +
+      '<div class="small muted">OP-Schutz erstattet 80 % von Tierarzt-Behandlungen (nicht Routine). Vollschutz zusätzlich 70 % des Schätzwerts (max. ' + fmt(120000) + ') bei Tod durch Alter/Geburt. Wartezeit OP ' + Economy.INSURE_VET_WAIT + ' Wo., Leben ' + Economy.INSURE_LIFE_WAIT + ' Wo.</div>' +
+      (blocked ? '<div class="small tag warn">Neuabschluss nicht möglich (Alter > 20 J. oder Gesundheit < 40).</div>' : '') +
+      '</div>';
   }
 
   function orderMatchBlock(h) {
@@ -1236,6 +1264,11 @@ const UI = (function () {
       Game.setTrainingFocus(t.dataset.id, t.value);
     } else if (t.dataset.action === 'set-feed') { Game.setFeed(parseInt(t.value, 10)); toast('Fütterung: ' + Economy.FEED[Game.state.feedLevel].label); }
     else if (t.dataset.action === 'set-care') { Game.setCare(parseInt(t.value, 10)); toast('Pflege: ' + Economy.CARE[Game.state.careLevel].label); }
+    else if (t.dataset.action === 'set-insurance') {
+      const r = Game.setInsurance(t.dataset.id, t.value);
+      if (!r.ok) { toast(r.msg, true); render(); }
+      else toast(t.value ? 'Versicherung aktiv.' : 'Versicherung gekündigt.');
+    }
     else if (t.dataset.action === 'stud-filter' && !t.dataset.toggle) { studFilter[t.dataset.field] = t.value; render(); }
     else if (t.dataset.action === 'stall-filter' && !t.dataset.toggle) { stallFilter[t.dataset.field] = t.value; render(); }
     else if (t.dataset.action === 'pick-sire') { breedSire = t.value || null; render(); }

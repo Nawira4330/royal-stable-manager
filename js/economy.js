@@ -867,6 +867,36 @@ const Economy = (function () {
     return clamp(base * attractiveness, 0, 2.6);
   }
 
+  // --- Versicherung: pro Pferd, zwei Stufen.
+  //     OP-Schutz   – erstattet 80 % von Tierarzt-Behandlungskosten (Ereignisse,
+  //                   Kolik, Schwergeburt), nicht von Routine (Hufschmied/Wurmkur).
+  //     Vollschutz  – zusätzlich Lebensversicherung: 70 % des Schätzwerts (max.
+  //                   INSURE_LIFE_CAP) bei Tod durch Alter oder Geburt.
+  //     Wartezeit: OP 2 Wochen, Leben 4 Wochen ab Abschluss.
+  const INSURE_VET_WAIT = 2, INSURE_LIFE_WAIT = 4;
+  const INSURE_VET_COVER = 0.8, INSURE_LIFE_SHARE = 0.7, INSURE_LIFE_CAP = 120000;
+  function insurancePremium(state, horse, tier) {
+    const val = Model.valuation(horse, state.week, prestigeMult(state));
+    if (tier === 'voll') return Math.max(20, Math.round(val * 0.0016 + 15));
+    if (tier === 'op') return Math.max(9, Math.round(val * 0.0006 + 8));
+    return 0;
+  }
+  function insuranceVetCover(state, horse) {
+    const ins = horse.insurance;
+    if (!ins) return 0;
+    return (state.week - (ins.since || 0) >= INSURE_VET_WAIT) ? INSURE_VET_COVER : 0;
+  }
+  function insuranceLifePayout(state, horse) {
+    const ins = horse.insurance;
+    if (!ins || ins.tier !== 'voll') return 0;
+    if (state.week - (ins.since || 0) < INSURE_LIFE_WAIT) return 0;
+    const val = Model.valuation(horse, state.week, prestigeMult(state));
+    return Math.round(Math.min(val, INSURE_LIFE_CAP) * INSURE_LIFE_SHARE);
+  }
+  function insurancePremiums(state) {
+    return (state.horses || []).reduce((s, h) => s + (h.insurance ? insurancePremium(state, h, h.insurance.tier) : 0), 0);
+  }
+
   function fmtEur(v) {
     return (Math.round(v)).toLocaleString('de-DE') + ' €';
   }
@@ -905,6 +935,11 @@ const Economy = (function () {
     boardIncomePerBox: boardIncomePerBox,
     freeStallSlots: freeStallSlots,
     studServiceBookings: studServiceBookings,
+    INSURE_VET_WAIT: INSURE_VET_WAIT, INSURE_LIFE_WAIT: INSURE_LIFE_WAIT,
+    insurancePremium: insurancePremium,
+    insuranceVetCover: insuranceVetCover,
+    insuranceLifePayout: insuranceLifePayout,
+    insurancePremiums: insurancePremiums,
     initDemand: initDemand,
     driftDemand: driftDemand,
     demandMultiplier: demandMultiplier,

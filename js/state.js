@@ -332,6 +332,52 @@ const Game = (function () {
     return { ok: true, carriers: carriers };
   }
 
+  // --- Versicherung ------------------------------------------------------
+  function setInsurance(horseId, tier) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    tier = (tier === 'op' || tier === 'voll') ? tier : null;
+    if (!tier) {
+      if (h.insurance) log('Versicherung für ' + h.name + ' gekündigt.', 'info');
+      delete h.insurance;
+      save(); emit();
+      return { ok: true };
+    }
+    if (!h.insurance) {
+      const y = Model.ageYears(h, state.week);
+      if (y > 20) return { ok: false, msg: h.name + ' ist zu alt für einen Neuabschluss (> 20 Jahre).' };
+      if (h.health < 40) return { ok: false, msg: h.name + ' ist zu angeschlagen (Gesundheit < 40) für einen Neuabschluss.' };
+      h.insurance = { tier: tier, since: state.week };
+      log('Versicherung ' + (tier === 'voll' ? 'Vollschutz' : 'OP-Schutz') + ' für ' + h.name + ' abgeschlossen (' +
+        Economy.fmtEur(Economy.insurancePremium(state, h, tier)) + '/Wo., Wartezeit ' +
+        (tier === 'voll' ? Economy.INSURE_LIFE_WAIT + ' Wo.' : Economy.INSURE_VET_WAIT + ' Wo.') + ').', 'info');
+    } else {
+      h.insurance.tier = tier;   // Stufe wechseln, Abschlussdatum bleibt
+      log('Versicherung für ' + h.name + ' auf ' + (tier === 'voll' ? 'Vollschutz' : 'OP-Schutz') + ' geändert.', 'info');
+    }
+    save(); emit();
+    return { ok: true };
+  }
+  // Tierarztrechnung teilweise erstatten. Gibt den erstatteten Betrag zurück.
+  function claimVetInsurance(h, bill) {
+    const cover = Economy.insuranceVetCover(state, h);
+    if (!cover || bill <= 0) return 0;
+    const refund = Math.round(bill * cover);
+    state.cash += refund;
+    state.stats.insuranceClaims = (state.stats.insuranceClaims || 0) + refund;
+    log('🛡️ Versicherung erstattet ' + Economy.fmtEur(refund) + ' der Tierarztkosten für ' + h.name + '.', 'good');
+    return refund;
+  }
+  // Lebensversicherung bei Tod auszahlen.
+  function payLifeInsurance(h, cause) {
+    const payout = Economy.insuranceLifePayout(state, h);
+    if (!payout) return 0;
+    state.cash += payout;
+    state.stats.insuranceClaims = (state.stats.insuranceClaims || 0) + payout;
+    log('🛡️ Lebensversicherung zahlt ' + Economy.fmtEur(payout) + ' für ' + h.name + ' (' + cause + ').', 'good');
+    return payout;
+  }
+
   function foalName() {
     const base = Names.randName();
     return (state.prefixOn && state.studPrefix) ? state.studPrefix + ' ' + base : base;
@@ -968,6 +1014,7 @@ const Game = (function () {
       if (y > 16) Model.injureHealth(h, Model.gauss(0.4, 0.3) * care.ageHealthMult, ['Fundament & Sehnen', 'Herz-Kreislauf', 'Hufe']);
       if (y > 26 && Math.random() < 0.06) {
         log(h.name + ' ist im Alter von ' + y.toFixed(0) + ' Jahren friedlich eingeschlafen.', 'warn');
+        payLifeInsurance(h, 'Alter');
         h._dead = true;
       }
       // Trächtigkeit
@@ -1006,6 +1053,7 @@ const Game = (function () {
       if (cRoll < compRisk * 0.28 && dam.health < 40) {
         // sehr selten: die Stute überlebt die Geburt nicht.
         log('💔 ' + dam.name + ' ist bei einer schweren Geburt gestorben. Das Fohlen konnte gerettet werden.', 'warn');
+        payLifeInsurance(dam, 'Geburt');
         dam._dead = true;
         removeHorse(dam.id);
       } else if (cRoll < compRisk * 0.5) {
@@ -1015,6 +1063,7 @@ const Game = (function () {
       } else if (cRoll < compRisk) {
         const bill = Math.round((500 + Model.randInt(0, 1200)) * Economy.staffVetMult(state));
         state.cash -= bill;
+        claimVetInsurance(dam, bill);
         Model.injureHealth(dam, Model.randInt(4, 10), ['Herz-Kreislauf']);
         result.foal._complication = Model.randInt(6, 16);
         log('Schwergeburt bei ' + dam.name + ' — Tierarzt -' + Economy.fmtEur(bill) + ', Stute und Fohlen angeschlagen.', 'warn');
@@ -1173,6 +1222,13 @@ const Game = (function () {
     });
     state.sponsors = stillActive;
 
+    // Versicherungsprämien (je versichertem Pferd, wertabhängig).
+    const premiums = Economy.insurancePremiums(state);
+    if (premiums > 0) {
+      state.cash -= premiums;
+      log('🛡️ Versicherungsprämien: -' + Economy.fmtEur(premiums) + '.', 'cost');
+    }
+
     // Pensionsstall: Wocheneinnahme je Gastbox (belegt echte Stallplätze).
     if (state.boarding > 0) {
       const bi = state.boarding * Economy.boardIncomePerBox(state);
@@ -1287,6 +1343,7 @@ const Game = (function () {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
       const bill = Math.round((300 + Model.randInt(0, 900)) * Economy.staffVetMult(state));
       state.cash -= bill;
+      claimVetInsurance(h, bill);
       const ailments = [
         { key: ['Atemwege'], name: 'einen Atemwegsinfekt' },
         { key: ['Immunsystem', 'Herz-Kreislauf'], name: 'eine Kolik' },
@@ -1412,6 +1469,11 @@ const Game = (function () {
     if (untested.length) t.push({ icon: '🔬', tab: 'stall', kind: 'info',
       text: untested.length + ' erwachsene' + (untested.length > 1 ? ' Pferde' : 's Pferd') + ' ohne Farbtest — verdeckte Farbträger vor der Zuchtplanung prüfen' });
 
+    const bigUninsured = state.horses.filter((h) => !h.insurance && !h.offered &&
+      Game.valuation(h) >= 20000 && Model.ageYears(h, state.week) <= 20 && h.health >= 40);
+    if (bigUninsured.length) t.push({ icon: '🛡️', tab: 'stall', kind: 'info',
+      text: bigUninsured.length + ' wertvolle' + (bigUninsured.length > 1 ? ' Pferde' : 's Pferd') + ' (≥ 20.000 €) ohne Versicherung' });
+
     const freeSlots = Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0);
     if (freeSlots >= 3 && !(state.boarding > 0)) t.push({ icon: '🏨', tab: 'gestüt', kind: 'info',
       text: freeSlots + ' freie Stallplätze — Pensionsstall bringt passives Wocheneinkommen' });
@@ -1457,6 +1519,7 @@ const Game = (function () {
     stopStudService: stopStudService,
     colorTest: colorTest,
     COLORTEST_COST: COLORTEST_COST,
+    setInsurance: setInsurance,
     fulfillBreedingOrder: fulfillBreedingOrder,
     createOffer: createOffer,
     cancelOffer: cancelOffer,

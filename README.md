@@ -47,7 +47,9 @@ auf dem Startbildschirm alle Regeln.
   Pferde nach Vorgabe: Prämie + Prestige, verfallene Aufträge kosten Prestige),
   **Zuchtbuch/Zuchtstempel** (Präfix wird eigenen Nachzuchten vorangestellt),
   **Pensionsstall** (freie Boxen an Gastpferde vermieten – passives
-  Wocheneinkommen, belegt echte Stallplätze), Chronik.
+  Wocheneinkommen, belegt echte Stallplätze), **Versicherung** je Pferd
+  (OP-Schutz: 80 % der Tierarzt-Behandlungskosten; Vollschutz zusätzlich
+  70 % des Schätzwerts bei Tod), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
   vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
   Gesundheit (5 Einzelnoten: Fundament & Sehnen, Atemwege, Herz-Kreislauf,
