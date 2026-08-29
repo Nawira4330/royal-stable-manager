@@ -111,6 +111,12 @@ const Model = (function () {
     if (!h.exterieur) { h.exterieur = {}; EXTERIEUR_TRAITS.forEach((t) => (h.exterieur[t] = h.conformation != null ? h.conformation : 62)); }
     if (!h.interieur) { h.interieur = {}; INTERIEUR_TRAITS.forEach((t) => (h.interieur[t] = h.temperament != null ? h.temperament : 60)); }
     if (!h.gesundheit) { h.gesundheit = {}; GESUNDHEIT_TRAITS.forEach((t) => (h.gesundheit[t] = h.health != null ? h.health : 88)); }
+    if (h.zuchtzulassung === undefined) h.zuchtzulassung = null;
+    if (h.praemie === undefined) h.praemie = null;
+    if (h.titel === undefined) h.titel = null;
+    if (h.leistungspruefung === undefined) h.leistungspruefung = null;
+    if (h.pendingTest === undefined) h.pendingTest = null;
+    if (h.noPapers === undefined) h.noPapers = false;
     return h;
   }
 
@@ -175,6 +181,16 @@ const Model = (function () {
       DISC.forEach((d) => { skill[d] = round(potential[d] * trainedFrac * clamp((y - 2) / 5, 0.2, 1)); });
     }
 
+    // Zuchtzulassung: Deckstation-/Markt-/Auktions-/Rivalenpferde können
+    // bereits gekört/eingetragen sein. Fohlen und Startbestand nicht.
+    let zul = null, prm = null, lp = null;
+    if (opts.approved) {
+      zul = (sex === 'hengst' ? 'gekört, ' : 'eingetragen, ') + (quality > 0.7 ? 'Zuchtbuch I' : 'Zuchtbuch II');
+      if (quality > 0.85) prm = quality > 0.93 ? 'Staatsprämie' : 'Ia-Prämie';
+      else if (quality > 0.72) prm = 'Ib-Prämie';
+      if (quality > 0.6) lp = { index: clamp(round(60 + quality * 70 + gauss(0, 10)), 40, 155), gaits: 0, ride: 0, jump: 0, char: 0, week: opts.currentWeek || 0 };
+    }
+
     return {
       id: opts.id || nextId(),
       name: opts.name || Names.randName(),
@@ -205,10 +221,23 @@ const Model = (function () {
       sireName: opts.sireName || null,
       damName: opts.damName || null,
       ancestors: opts.ancestors || syntheticAncestors(),
+      zuchtzulassung: zul,
+      praemie: prm,
+      titel: null,
+      leistungspruefung: lp,
+      pendingTest: null,
+      noPapers: false,
       bred: !!opts.bred,
       origin: opts.origin || 'generiert',
       acquiredWeek: opts.currentWeek || 0,
     };
+  }
+
+  function approvalRank(s) {
+    if (!s) return 0;
+    if (/Zuchtbuch I\b/.test(s)) return 3;
+    if (/gekört|eingetragen/.test(s)) return 2;
+    return 1;
   }
 
   function syntheticAncestors() {
@@ -259,6 +288,8 @@ const Model = (function () {
       exterieur: Object.assign({}, exterieurOf(h)),
       interieur: Object.assign({}, interieurOf(h)),
       gesundheit: Object.assign({}, gesundheitOf(h)),
+      zuchtzulassung: h.zuchtzulassung || null, praemie: h.praemie || null, titel: h.titel || null,
+      leistungspruefung: h.leistungspruefung || null, noPapers: !!h.noPapers,
       conformation: h.conformation, temperament: h.temperament, health: h.health,
       quality: h.quality, ancestors: Object.assign({}, h.ancestors || {}),
     };
@@ -433,6 +464,9 @@ const Model = (function () {
       sireId: sire.id, damId: dam.id,
       sireName: sire.name, damName: dam.name,
       ancestors: mergeAncestors(sire, dam),
+      zuchtzulassung: null, praemie: null, titel: null, leistungspruefung: null, pendingTest: null,
+      // Ohne Zuchtbucheintrag, wenn der Vater nicht (mind.) gekört/eingetragen ist.
+      noPapers: fc.mix || approvalRank(sire.zuchtzulassung) < 2,
       bred: true,
       origin: 'eigene Zucht',
       acquiredWeek: currentWeek,
@@ -489,6 +523,13 @@ const Model = (function () {
     v += (horse.temperament - 50) * 12;
     v -= (100 - horse.health) * 60;
 
+    // Zuchtzulassung / Prämierung / Leistungsprüfung.
+    v += [0, 700, 2400, 4800][approvalRank(horse.zuchtzulassung)];
+    v += { 'Ib-Prämie': 1500, 'Ia-Prämie': 4000, 'Staatsprämie': 9000 }[horse.praemie] || 0;
+    if (horse.titel) v += 6000;
+    if (horse.leistungspruefung) v += (horse.leistungspruefung.index - 40) * 30;
+    if (horse.noPapers) v *= 0.62;   // Fohlen ohne Zuchtbucheintrag
+
     if (y < 1) v *= 0.6;
     else if (y < 3) v *= 0.82;
     else if (y <= 12) v *= 1;
@@ -524,6 +565,7 @@ const Model = (function () {
     isAdult: isAdult,
     ageFactor: ageFactor,
     isMixBreed: isMixBreed,
+    approvalRank: approvalRank,
     breedDef: breedDef,
     exterieurOf: exterieurOf,
     interieurOf: interieurOf,

@@ -50,9 +50,14 @@ auf dem Startbildschirm alle Regeln.
   filtert nur danach und empfiehlt nichts. Die Vorschau zeigt je Einzelnote
   Hengst/Stute/Erwartung, COI, Farb- und Gesundheitsprognose.
 - **🏆 Schauen** – je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen)
-  mit Mindestanforderung an die Ausbildung, Jungpferde-Prüfungen (3–7 J.),
-  Nenn- + Reisekosten, Energieverbrauch. Ergebnislisten, Saisonpunkte je
-  Disziplin, Saisonwertung.
+  mit Mindestanforderung, Jungpferde-Prüfungen, Nenn-/Reisekosten,
+  Energieverbrauch. Dazu **Zuchtschauen** und **Körungen/Prämierungen**
+  (Zuchtbuch-Eintrag, Ia/Ib/Staatsprämie, Siegertitel) und die
+  **Leistungsprüfung** (Stationsprüfung, Leistungsindex, Voraussetzung fürs
+  Zuchtbuch I). **Rivalen-Gestüte** treten überall mit an; **Gestüts-Rangliste**
+  und ein **Jahres-Championat** (52 Wochen, Finale je Disziplin + Gesamt-Titel,
+  danach Saisonpunkt-Reset). Fohlen von nicht gekörten Hengsten bekommen
+  **keinen Zuchtbucheintrag** (−38 % Wert).
 - **🔨 Auktion** – gegen KI bieten, eigene Pferde mit Limit einliefern.
 - **🛒 Markt** – kaufen und verkaufen. **Angebot & Nachfrage**: Preise und
   Verkaufstempo folgen der Nachfrage je Segment (Rasse + beste Disziplin +

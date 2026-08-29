@@ -178,6 +178,8 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 .stud-filter input { width: 5rem; }
 .stud-filter select { max-width: 12rem; }
 
+.badge-row { display: flex; flex-wrap: wrap; gap: .3rem; }
+
 .trade-list div { padding: .3rem 0; border-bottom: 1px dashed var(--border); font-size: .88rem; }
 .trade-list div:last-child { border-bottom: none; }
 

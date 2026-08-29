@@ -58,6 +58,20 @@ const UI = (function () {
     return '';
   }
 
+  // Zucht-/Prämierungs-Badges.
+  function zuchtBadges(h) {
+    const b = [];
+    if (h.noPapers || Model.isMixBreed(h.breed)) b.push('<span class="tag warn">ohne Zuchtbucheintrag</span>');
+    else if (h.zuchtzulassung) b.push('<span class="tag good">' + esc(h.zuchtzulassung) + '</span>');
+    if (h.titel) b.push('<span class="tag rare">' + esc(h.titel) + '</span>');
+    if (h.praemie) b.push('<span class="tag rare">' + esc(h.praemie) + '</span>');
+    if (h.leistungspruefung) {
+      const idx = h.leistungspruefung.index;
+      b.push('<span class="tag ' + (idx >= 80 ? 'good' : 'warn') + '">LP-Index ' + idx + '</span>');
+    }
+    return b.join(' ');
+  }
+
   // Aufklappbare Einzelnoten (Exterieur / Interieur) in der Stall-Detailansicht.
   function subTraitDetails(label, keys, obj, summary) {
     const lines = keys.map((t) =>
@@ -363,7 +377,8 @@ const UI = (function () {
           <h3 style="margin:0">${esc(h.name)} <button class="small secondary" data-action="rename-horse" data-id="${h.id}">✎</button></h3>
           <span class="muted small">${sexIcon(h)} · ${ageStr(h)}</span>
         </div>
-        <div class="small muted">${esc(h.breed)}${(h.isMix || Model.isMixBreed(h.breed)) ? ' <span class="tag warn">Mix – kein Zuchtbuch</span>' : ''}</div>
+        <div class="small muted">${esc(h.breed)}${(h.isMix || Model.isMixBreed(h.breed)) ? ' <span class="tag warn">Mix</span>' : ''}</div>
+        ${zuchtBadges(h) ? '<div class="badge-row">' + zuchtBadges(h) + '</div>' : ''}
         ${parents}
         <div><b>${esc(pheno.display)}</b> ${rarityTag(h)} ${pheno.blueEyes ? '<span class="tag">blaue Augen</span>' : ''}</div>
         <div class="geno-tokens">${esc(pheno.tokens)}</div>
@@ -384,6 +399,7 @@ const UI = (function () {
         </div>
         ${adult ? '' : '<p class="small muted">Training, Zucht und Turniere erst ab 3 Jahren.</p>'}
         ${pts}
+        ${lpBlock(h)}
         ${showRec}
 
         <hr style="border:none;border-top:1px solid var(--border)">
@@ -406,6 +422,22 @@ const UI = (function () {
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
+  }
+
+  function lpBlock(h) {
+    const y = ageYears(h);
+    if (h.leistungspruefung) {
+      const lp = h.leistungspruefung;
+      return '<div class="small">🎓 Leistungsprüfung: <b>Index ' + lp.index + '</b> (' + (lp.index >= 80 ? 'bestanden' : 'nicht bestanden') + ')' +
+        (lp.gaits ? ' — GGA ' + lp.gaits + ', Rittigkeit ' + lp.ride + ', Springen ' + lp.jump + ', Charakter ' + lp.char : '') + '</div>';
+    }
+    if (h.pendingTest) return '<div class="small">🎓 Leistungsprüfung läuft — noch ' + h.pendingTest.weeksLeft + ' Wochen.</div>';
+    if (y >= Model.MATURITY_YEARS && y <= 9 && !h.offered && !h.pregnancy) {
+      return '<div class="row"><button class="small secondary" data-action="start-lp" data-id="' + h.id +
+        '">🎓 Zur Leistungsprüfung (4.200 €, 6 Wochen)</button></div>' +
+        '<div class="small muted">Bestandene Prüfung (Index ≥ 80) ist Voraussetzung fürs Zuchtbuch I bei der Körung.</div>';
+    }
+    return '';
   }
 
   function offerCancelBtn(h) {
@@ -525,6 +557,7 @@ const UI = (function () {
           ${m.worsens.length ? '<div class="small"><span class="tag warn">niedriger bei</span> ' + esc(traitList(m.worsens)) + '</div>' : ''}
           <div class="row between"><span>Fohlenrasse</span><b>${esc(fc.foalBreed)}</b></div>
           ${fc.mix ? '<p class="small tag warn">„Mix" hat kein Zuchtbuch — Marktwert rund −50 %, Zuchtschau-Malus, Begabungen/Exterieur im Schnitt −5.</p>' : ''}
+          ${(!fc.mix && Model.approvalRank(plan.sire.zuchtzulassung) < 2) ? '<p class="small tag warn">' + esc(plan.sire.name) + ' ist nicht gekört → das Fohlen bekommt <b>keinen Zuchtbucheintrag</b> (−38 % Wert, kein Start bei Zuchtschau/Körung). Erst zur Körung schicken.</p>' : ''}
           <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
           ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — spürbare Abzüge bei Gesundheit, Begabungen und Fruchtbarkeit.</p>' : ''}
           <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b></div>
@@ -680,10 +713,12 @@ const UI = (function () {
       const sel = '<select data-show="' + show.id + '" class="enter-sel">' + opts.join('') + '</select>';
 
       const reqTxt = [
-        show.type === 'sport' ? 'Mindest-' + show.discipline + ' ' + show.minSkill : 'Mindest-Exterieur ' + show.minConf,
+        show.type === 'sport' ? 'Mindest-' + show.discipline + ' ' + show.minSkill
+          : (show.type === 'koerung' ? 'Mindest-Exterieur ' + show.minConf + ', mit Zuchtbucheintrag' : 'Mindest-Exterieur ' + show.minConf),
         show.youngster ? 'nur 3–7 J.' : null,
         'Energie ≥ ' + show.minEnergy + ', Gesundheit ≥ ' + show.minHealth,
       ].filter(Boolean).join(' · ');
+      const typeLabel = show.type === 'sport' ? show.discipline : (show.type === 'koerung' ? 'Körung / Prämierung' : 'Zuchtschau');
 
       let resultTbl = '';
       if (show.done && show._allResults) {
@@ -697,7 +732,7 @@ const UI = (function () {
 
       return `<div class="card stack">
         <div class="row between"><b>${esc(show.name)}</b><span class="tag">Klasse ${show.level}</span></div>
-        <div class="small muted">${show.type === 'sport' ? show.discipline : 'Zuchtschau'} ·
+        <div class="small muted">${esc(typeLabel)} ·
           Nenngeld ${fmt(show.entryFee)} · Reise ${fmt(show.travelCost)} · Kraft −${show.energyCost} Energie · Preisgeld ${fmt(show.prizePool)}</div>
         <div class="small">Zulassung: ${esc(reqTxt)}</div>
         ${entered.length ? '<div class="small">Genannt: ' + entered.map((h) =>
@@ -718,27 +753,47 @@ const UI = (function () {
         rows + '</tbody></table></details>';
     }).join('');
 
-    // Saisonwertung: eigene Pferde nach Turnierpunkten je Disziplin.
-    const standings = DISC.concat(['Zucht']).map((disc) => {
+    // Saisonwertung: eigene Pferde je Disziplin, mit Championat-Qualifikation.
+    const qual = Economy.championshipQualified(s);
+    const standings = DISC.map((disc) => {
       const ranked = s.horses
         .filter((h) => h.turnierPunkte && h.turnierPunkte[disc])
         .sort((a, b) => b.turnierPunkte[disc] - a.turnierPunkte[disc])
         .slice(0, 3);
       if (!ranked.length) return '';
       return '<div class="small"><b>' + esc(disc) + ':</b> ' +
-        ranked.map((h, i) => (i + 1) + '. ' + esc(h.name) + ' (' + h.turnierPunkte[disc] + ')').join(' · ') + '</div>';
+        ranked.map((h, i) => (i + 1) + '. ' + esc(h.name) + ' (' + h.turnierPunkte[disc] +
+          ((h.turnierPunkte[disc] >= Economy.CHAMP_QUAL) ? ' <span class="tag good">✓ Championat</span>' : '') + ')').join(' · ') + '</div>';
     }).filter(Boolean).join('');
+
+    // Gestüts-Rangliste (laufende Saison): du + Rivalen.
+    const champIn = Model.WEEKS_PER_YEAR - (s.week % Model.WEEKS_PER_YEAR);
+    const rankRows = Economy.seasonStandings(s).map((r, i) =>
+      '<tr class="' + (r.isPlayer ? 'selected' : '') + '"><td>' + (i + 1) + '.</td><td>' + esc(r.name) +
+      (r.isPlayer ? ' <b>(du)</b>' : '') + '</td><td class="right">' + r.points + '</td><td class="right muted small">' + r.prestige + '</td></tr>').join('');
+    const rankCard = `<div class="card" style="margin-top:1rem">
+      <h3>🏇 Gestüts-Rangliste — Saison ${s.seasonYear || 1}</h3>
+      <p class="small muted">Jahres-Championat in <b>${champIn}</b> Woche${champIn === 1 ? '' : 'n'}: je Disziplin ein Finale für alle Pferde ab
+      ${Economy.CHAMP_QUAL} Saisonpunkten, dazu der Gesamt-Titel fürs punktbeste Gestüt. Danach werden die Saisonpunkte genullt.</p>
+      <table class="small"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${rankRows}</tbody></table>
+    </div>`;
+
+    const hist = (s.championHistory || []).map((c) =>
+      '<details><summary class="small"><b>Jahr ' + c.year + ' — Gesamt-Champion: ' + esc(c.overall || '—') + '</b></summary>' +
+      '<div class="small">' + DISC.map((d) => d + ': ' + esc(c.disciplines[d] || '—')).join(' · ') + '</div></details>').join('');
 
     return `
       <div class="card">
         <h3>Schaukalender</h3>
-        <p class="small muted">Je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen) mit Mindestanforderung an die
-        Ausbildung. Genannte Pferde starten beim nächsten „Woche weiter"; ein Turnier kostet Nenngeld, Reisekosten und Energie.
-        Platzierungen bringen Preisgeld, Prestige und Saisonpunkte.</p>
+        <p class="small muted">Je Disziplin eigene Prüfungsklassen mit Mindestanforderung. Dazu <b>Zuchtschauen</b> und
+        <b>Körungen/Prämierungen</b> (Zuchtzulassung + Ia/Ib/Staatsprämie + Siegertitel). Genannte Pferde starten beim „Woche weiter";
+        Kosten: Nenngeld, Reise, Energie. Platzierungen bringen Preisgeld, Prestige und Saisonpunkte.</p>
       </div>
       <div class="grid cols-2" style="margin-top:1rem">${cards}</div>
       ${recent ? '<div class="card" style="margin-top:1rem"><h3>📋 Letzte Ergebnisse</h3>' + recent + '</div>' : ''}
-      ${standings ? '<div class="card" style="margin-top:1rem"><h3>🏅 Saisonwertung (deine Pferde)</h3>' + standings + '</div>' : ''}`;
+      ${rankCard}
+      ${standings ? '<div class="card" style="margin-top:1rem"><h3>🏅 Deine Pferde je Disziplin</h3>' + standings + '</div>' : ''}
+      ${hist ? '<div class="card" style="margin-top:1rem"><h3>🏆 Championat-Historie</h3>' + hist + '</div>' : ''}`;
   };
 
   // --- 🔨 Auktion ----------------------------------------------------
@@ -972,6 +1027,13 @@ const UI = (function () {
       return;
     }
     if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
+
+    if (a === 'start-lp') {
+      const r = Game.startPerformanceTest(el.dataset.id);
+      if (!r.ok) toast(r.msg, true); else toast('Zur Leistungsprüfung angemeldet.');
+      render();
+      return;
+    }
 
     if (a === 'rename-horse') {
       const h = Game.getHorse(el.dataset.id);

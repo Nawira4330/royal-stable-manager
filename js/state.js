@@ -48,6 +48,9 @@ const Game = (function () {
       nextMarketWeek: 0,
       nextShowWeek: 0,
       nextStudWeek: 0,
+      rivals: [],
+      seasonYear: 1,
+      championHistory: [],
       stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0 },
     };
 
@@ -58,6 +61,7 @@ const Game = (function () {
       state.horses.push(Model.generateHorse({ sex: 'stute', breed: startBreeds[i], quality: 0.45 + Math.random() * 0.2, ageYears: 4 + Math.random() * 5, currentWeek: 0, origin: 'Startbestand' }));
     }
 
+    state.rivals = Economy.initRivals(state);
     state.market = Economy.rollMarket(state);
     state.studRoster = Economy.rollStudRoster(state);
     state.shows = Economy.rollShows(state);
@@ -79,6 +83,9 @@ const Game = (function () {
     if (!state) return;
     if (!state.demand) state.demand = Economy.initDemand();
     if (!state.showResults) state.showResults = [];
+    if (!Array.isArray(state.rivals) || !state.rivals.length) state.rivals = Economy.initRivals(state);
+    if (state.seasonYear == null) state.seasonYear = 1;
+    if (!Array.isArray(state.championHistory)) state.championHistory = [];
     if (!state.friendCode) state.friendCode = Friend.playerCode();
     if (!Array.isArray(state.friendStuds)) state.friendStuds = [];
     if (!Array.isArray(state.pendingOffers)) state.pendingOffers = [];
@@ -613,6 +620,44 @@ const Game = (function () {
     save(); emit();
   }
 
+  // --- Leistungsprüfung (Stationsprüfung). Kostet Geld + ~6 Wochen +
+  //     Energie, liefert einen Leistungsindex (Grundgangarten, Rittigkeit,
+  //     Springen, Charakter). Ab Index 80 gilt sie als bestanden -> Voraussetzung
+  //     für die Eintragung ins Zuchtbuch I bei der Körung.
+  const LP_COST = 4200;
+  const LP_WEEKS = 6;
+  function startPerformanceTest(horseId) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.pendingTest) return { ok: false, msg: h.name + ' ist bereits zur Prüfung angemeldet.' };
+    if (h.leistungspruefung) return { ok: false, msg: h.name + ' hat die Prüfung schon abgelegt (Index ' + h.leistungspruefung.index + ').' };
+    const y = Model.ageYears(h, state.week);
+    if (y < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung (< 3 Jahre).' };
+    if (y > 9) return { ok: false, msg: 'Leistungsprüfungen legt man mit 3–9 Jahren ab.' };
+    if (h.pregnancy) return { ok: false, msg: 'Trächtige Stuten nicht zur Prüfung.' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Verkaufsangebot.' };
+    if (h.energy < 40) return { ok: false, msg: h.name + ' ist zu erschöpft (Energie < 40).' };
+    if (state.cash < LP_COST) return { ok: false, msg: 'Prüfungsgebühr ' + Economy.fmtEur(LP_COST) + ' nicht bezahlbar.' };
+    state.cash -= LP_COST;
+    h.energy = clamp(h.energy - 20, 0, 100);
+    h.pendingTest = { weeksLeft: LP_WEEKS, cost: LP_COST };
+    log(h.name + ' zur Leistungsprüfung angemeldet (-' + Economy.fmtEur(LP_COST) + ', Ergebnis in ' + LP_WEEKS + ' Wochen).', 'cost');
+    save(); emit();
+    return { ok: true };
+  }
+  function finishPerformanceTest(h) {
+    const inr = Model.interieurOf(h), ex = Model.exterieurOf(h);
+    const g = (v) => clamp(Math.round(v), 10, 155);
+    const gaits = g(0.5 * h.conformation + 0.3 * inr['Rittigkeit'] + 0.2 * ex['Bewegung'] + Model.gauss(0, 8));
+    const ride = g(0.4 * inr['Rittigkeit'] + 0.3 * inr['Nervenstärke'] + 0.2 * inr['Lernwille'] + 10 + Model.gauss(0, 8));
+    const jump = g(0.5 * Math.max(h.potential.Springen, h.potential.Vielseitigkeit) + 0.2 * ex['Hinterhand'] + Model.gauss(0, 10));
+    const char = g(0.4 * inr['Leistungsbereitschaft'] + 0.3 * inr['Umgänglichkeit'] + 0.2 * inr['Nervenstärke'] + 12 + Model.gauss(0, 7));
+    const index = clamp(Math.round((gaits + ride + jump + char) / 4 * 1.12), 10, 160);
+    h.leistungspruefung = { index: index, gaits: gaits, ride: ride, jump: jump, char: char, week: state.week };
+    log('Leistungsprüfung ' + h.name + ' abgeschlossen: Index ' + index + ' (' + (index >= 80 ? 'bestanden' : 'nicht bestanden') +
+      ') — GGA ' + gaits + ', Rittigkeit ' + ride + ', Springen ' + jump + ', Charakter ' + char + '.', index >= 80 ? 'good' : 'warn');
+  }
+
   // --- Der Wochen-Tick ---------------------------------------------------
   function advanceWeek() {
     const arena = Economy.facLevel(state, 'arena');
@@ -666,6 +711,11 @@ const Game = (function () {
         if (skipped > 0 && plan.length) {
           log(h.name + ' war zu erschöpft für ' + skipped + ' Trainingseinheit' + (skipped > 1 ? 'en' : '') + ' - mehr Ruhetage einplanen.', 'warn');
         }
+      }
+      // Leistungsprüfung / Stationsprüfung läuft ab.
+      if (h.pendingTest) {
+        h.pendingTest.weeksLeft -= 1;
+        if (h.pendingTest.weeksLeft <= 0) { finishPerformanceTest(h); h.pendingTest = null; }
       }
       // Altersbedingter Substanzverlust (durch gute Pflege gebremst)
       if (y > 16) Model.injureHealth(h, Model.gauss(0.4, 0.3) * care.ageHealthMult, ['Fundament & Sehnen', 'Herz-Kreislauf', 'Hufe']);
@@ -801,6 +851,16 @@ const Game = (function () {
       state.studRoster = Economy.rollStudRoster(state);
       state.nextStudWeek = state.week + 6;
     }
+
+    // Rivalen-Gestüte entwickeln sich; am Jahresende das Championat.
+    Economy.advanceRivals(state);
+    if (state.week > 0 && state.week % Model.WEEKS_PER_YEAR === 0) {
+      const cs = Economy.runChampionship(state);
+      state.stats.totalEarnings += cs.playerPrize;
+      log('🏆 JAHRES-CHAMPIONAT ' + cs.year + ' — Gestüts-Champion: ' + (cs.overall || '—') +
+        '. Deine Championats-Preisgelder: ' + Economy.fmtEur(cs.playerPrize) + ', +' + Math.round(cs.playerPrestige) + ' Prestige. Saisonpunkte zurückgesetzt.', 'good');
+      Model.DISC.forEach((d) => { if (cs.disciplines[d]) log('   Championat ' + d + ': ' + cs.disciplines[d], 'info'); });
+    }
     if (state.shows.every((s) => s.done) || state.week >= state.nextShowWeek) {
       state.shows = Economy.rollShows(state);
       state.nextShowWeek = state.week + 3;
@@ -933,6 +993,21 @@ const Game = (function () {
     const debt = (state.friendStuds || []).reduce((sum, x) => sum + (x.owed || 0), 0);
     if (debt > 0) t.push({ icon: '💶', tab: 'gestüt', kind: 'info',
       text: 'Offene Decktaxe an Freunde: ' + Economy.fmtEur(debt) + ' — Abrechnungs-Code erstellen' });
+
+    const ungekört = state.horses.filter((h) => h.sex === 'hengst' && !h.noPapers && !h.isMix &&
+      Model.ageYears(h, state.week) >= Model.MATURITY_YEARS && Model.approvalRank(h.zuchtzulassung) < 2);
+    if (ungekört.length) t.push({ icon: '📜', tab: 'stall', kind: 'info',
+      text: ungekört.length + ' Hengst' + (ungekört.length > 1 ? 'e' : '') + ' ohne Körung/Zuchtzulassung — Fohlen bekommen sonst keine Papiere' });
+    const inTest = state.horses.filter((h) => h.pendingTest);
+    inTest.forEach((h) => t.push({ icon: '🎓', tab: 'stall', kind: 'info',
+      text: 'Leistungsprüfung ' + h.name + ' — noch ' + h.pendingTest.weeksLeft + ' Wochen' }));
+    const champIn = Model.WEEKS_PER_YEAR - (state.week % Model.WEEKS_PER_YEAR);
+    if (champIn <= 4 && champIn > 0) {
+      const q = Economy.championshipQualified(state);
+      const nQual = Object.keys(q).reduce((n, d) => n + (q[d].length ? 1 : 0), 0);
+      t.push({ icon: '🏆', tab: 'schauen', kind: 'info',
+        text: 'Jahres-Championat in ' + champIn + ' Woche' + (champIn > 1 ? 'n' : '') + ' — in ' + nQual + ' Disziplin(en) qualifiziert' });
+    }
     const unconfirmed = (state.friendStuds || []).filter((x) => x.pendingSettle);
     unconfirmed.forEach((x) => t.push({ icon: '🧾', tab: 'gestüt', kind: (state.week - x.pendingSettle.sentWeek > 8 ? 'warn' : 'info'),
       text: 'Decktaxe-Abrechnung für ' + x.horse.name + ' (' + Economy.fmtEur(x.pendingSettle.amount) + ') an ' + x.friend + ' — noch nicht bestätigt' }));
@@ -981,6 +1056,7 @@ const Game = (function () {
     consignToAuction: consignToAuction,
     enterShow: enterShow,
     withdrawShow: withdrawShow,
+    startPerformanceTest: startPerformanceTest,
     advanceWeek: advanceWeek,
     acceptPendingOffer: acceptPendingOffer,
     declinePendingOffer: declinePendingOffer,

@@ -181,7 +181,7 @@ const Economy = (function () {
     const list = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.4 + tier * 0.05, 0.16), 0.05, 0.98);
-      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Markt' });
+      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Markt', approved: Math.random() < 0.5 });
       const val = Model.valuation(h, state.week, prestigeMult(state));
       const dm = demandMultiplier(state, h);
       const ask = Math.round(val * dm * (0.88 + Math.random() * 0.4) / 50) * 50;
@@ -208,7 +208,7 @@ const Economy = (function () {
         : clamp(Model.gauss(0.55 + tier * 0.05, 0.16), 0.25, 0.97);
       const breed = breeds[Model.randInt(0, breeds.length - 1)];
       const h = Model.generateHorse({
-        sex: 'hengst', breed: breed, quality: q,
+        sex: 'hengst', breed: breed, quality: q, approved: true,
         ageYears: 4 + Math.random() * 11, currentWeek: state.week, origin: 'Deckstation',
       });
       h.external = true;
@@ -228,7 +228,7 @@ const Economy = (function () {
     const lots = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.5 + tier * 0.06, 0.18), 0.1, 0.99);
-      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Auktion' });
+      const h = Model.generateHorse({ quality: q, currentWeek: state.week, origin: 'Auktion', approved: Math.random() < 0.6 });
       const dm = demandMultiplier(state, h);
       const val = Math.round(Model.valuation(h, state.week, prestigeMult(state)) * dm);
       lots.push({
@@ -304,8 +304,21 @@ const Economy = (function () {
     Fahren: ['Fahren E', 'Fahren A', 'Fahren L', 'Fahren M', 'Fahren S'],
   };
   const ZUCHT_CLASS_NAMES = ['Ortsschau', 'Bezirksschau', 'Landesschau', 'Elite-Stutenschau', 'Bundeschampionat'];
+  const KOER_CLASS_NAMES = ['Vorauswahl', 'Bezirkskörung', 'Landeskörung', 'Elitekörung', 'Bundeskörung'];
   const SPORT_MIN_SKILL = [0, 18, 35, 52, 70];
   const ZUCHT_MIN_CONF = [0, 48, 60, 70, 80];
+  const KOER_MIN_CONF = [0, 55, 63, 71, 78];
+
+  // Rang der Zuchtzulassung: 0 keine · 1 Zuchtbuch II · 2 gekört/eingetragen
+  // (Zuchtbuch II) · 3 Zuchtbuch I (mit bestandener Leistungsprüfung).
+  function approvalRank(s) {
+    if (!s) return 0;
+    if (/Zuchtbuch I\b/.test(s)) return 3;
+    if (/gekört|eingetragen/.test(s)) return 2;
+    return 1;
+  }
+  function praemieRank(s) { return { 'Ib-Prämie': 1, 'Ia-Prämie': 2, 'Staatsprämie': 3 }[s] || 0; }
+  function lpPassed(h) { return !!(h.leistungspruefung && h.leistungspruefung.index >= 80); }
 
   function rollShows(state) {
     const tier = prestigeTier(state).stars;
@@ -314,7 +327,6 @@ const Economy = (function () {
     for (let i = 0; i < nSport; i++) {
       const disc = DISC[Model.randInt(0, DISC.length - 1)];
       const level = clamp(Model.randInt(1, tier + 1), 1, 5);
-      // Jungpferde-Prüfung: nur niedrige Klassen, nur 3-7 Jahre.
       const youngster = level <= 2 && Math.random() < 0.3;
       shows.push(makeShow('sport', disc, level, youngster));
     }
@@ -322,14 +334,19 @@ const Economy = (function () {
     for (let i = 0; i < nZ; i++) {
       shows.push(makeShow('zucht', null, clamp(Model.randInt(1, tier + 1), 1, 5), false));
     }
+    // Körung / Prämierung: nicht in jedem Kalender.
+    if (Math.random() < 0.6) {
+      shows.push(makeShow('koerung', null, clamp(Model.randInt(2, tier + 2), 2, 5), false));
+    }
     return shows;
   }
 
   function makeShow(type, disc, level, youngster) {
     const pool = [1500, 4000, 9000, 20000, 45000][level - 1];
-    const baseName = type === 'zucht'
-      ? ZUCHT_CLASS_NAMES[level - 1]
-      : (CLASS_NAMES[disc] ? CLASS_NAMES[disc][level - 1] : disc + ' ' + level);
+    let baseName;
+    if (type === 'zucht') baseName = ZUCHT_CLASS_NAMES[level - 1];
+    else if (type === 'koerung') baseName = 'Körung / Prämierung — ' + KOER_CLASS_NAMES[level - 1];
+    else baseName = (CLASS_NAMES[disc] ? CLASS_NAMES[disc][level - 1] : disc + ' ' + level);
     return {
       id: 'show_' + Math.random().toString(36).slice(2, 8),
       type: type,
@@ -337,14 +354,14 @@ const Economy = (function () {
       level: level,
       youngster: !!youngster,
       name: baseName + (youngster ? ' (Jungpferde)' : ''),
-      entryFee: Math.round(pool * 0.03),
+      entryFee: type === 'koerung' ? Math.round(pool * 0.06) : Math.round(pool * 0.03),
       travelCost: Math.round(pool * 0.012) + 60 * level,
-      energyCost: 12 + level * 4,
+      energyCost: type === 'koerung' ? 10 : 12 + level * 4,
       minSkill: type === 'sport' ? SPORT_MIN_SKILL[level - 1] : 0,
-      minConf: type === 'zucht' ? ZUCHT_MIN_CONF[level - 1] : 0,
-      minEnergy: 30,
-      minHealth: 55,
-      prizePool: pool,
+      minConf: type === 'zucht' ? ZUCHT_MIN_CONF[level - 1] : (type === 'koerung' ? KOER_MIN_CONF[level - 1] : 0),
+      minEnergy: type === 'koerung' ? 20 : 30,
+      minHealth: type === 'koerung' ? 50 : 55,
+      prizePool: type === 'koerung' ? Math.round(pool * 0.35) : pool,
       fieldStrength: 30 + level * 12,
       entered: [],
       done: false,
@@ -362,8 +379,9 @@ const Economy = (function () {
       return 'Nicht qualifiziert: ' + show.discipline + ' ' + Math.round(horse.skill[show.discipline]) +
         ' < geforderte ' + show.minSkill + '.';
     }
-    if (show.type === 'zucht' && horse.conformation < show.minConf) {
-      return 'Nicht zugelassen: Exterieur ' + Math.round(horse.conformation) + ' < geforderte ' + show.minConf + '.';
+    if ((show.type === 'zucht' || show.type === 'koerung')) {
+      if (horse.noPapers || horse.isMix) return 'Ohne Zuchtbucheintrag (Vater nicht gekört) — keine Zuchtschau/Körung.';
+      if (horse.conformation < show.minConf) return 'Exterieur ' + Math.round(horse.conformation) + ' < geforderte ' + show.minConf + '.';
     }
     if (horse.energy < show.minEnergy) return horse.name + ' ist zu erschöpft (Energie < ' + show.minEnergy + ').';
     if (horse.health < show.minHealth) return horse.name + ' ist nicht fit genug (Gesundheit < ' + show.minHealth + ').';
@@ -372,7 +390,7 @@ const Economy = (function () {
 
   // Disziplin-gerechte Darstellung der Wertung.
   function showScoreLabel(show, rawScore, leaderScore) {
-    if (show.type === 'zucht') return (5 + rawScore / 20).toFixed(1) + '/10';
+    if (show.type === 'zucht' || show.type === 'koerung') return clamp(5 + rawScore / 18, 3, 10).toFixed(1) + '/10';
     switch (show.discipline) {
       case 'Dressur':
       case 'Fahren':
@@ -429,77 +447,216 @@ const Economy = (function () {
         + fit + tempBonus + healthBonus
         + form * 0.16;
     }
-    // Zuchtschau: Exterieur + Typ (Rassewert) + Abstammung (Elternnamen bekannt?)
+    // Zuchtschau / Körung: Exterieur + Typ + Abstammung + Leistungsprüfung.
     const bdef = Model.breedDef(horse.breed);
     const typeBonus = (horse.conformation - bdef.conf) * 0.2;
-    const pedigreeBonus = (horse.sireName ? 4 : 0) + (horse.damName ? 4 : 0) + horse.wins * 1.5;
+    const pedigreeBonus = (horse.sireName ? 4 : 0) + (horse.damName ? 4 : 0) + horse.wins * 1.5
+      + praemieRank(horse.praemie) * 3;
     const rarity = Genetics.describe(horse.genotype, y).rarity * 10;
-    // Mixe haben keinen Rassetyp und kein Zuchtbuch -> deutlicher Malus.
     const mixMalus = (horse.isMix || Model.isMixBreed(horse.breed)) ? 20 : 0;
-    return horse.conformation * 0.66
-      + typeBonus + pedigreeBonus + rarity - mixMalus
+    const lpBonus = horse.leistungspruefung ? (horse.leistungspruefung.index - 55) * (show.type === 'koerung' ? 0.28 : 0.14) : 0;
+    return horse.conformation * (show.type === 'koerung' ? 0.55 : 0.66)
+      + typeBonus + pedigreeBonus + rarity - mixMalus + lpBonus
       + tempBonus + healthBonus * 0.5
-      + form * 0.14;
+      + form * 0.13;
   }
 
-  // Führt eine Schau aus: Spielerpferde + KI-Feld, Platzierung, Preisgeld.
-  function runShow(state, show) {
+  // --- Rivalen-Gestüte: benannte KI-Konkurrenz mit eigenen Pferden, die
+  //     bei Turnieren immer wieder auftauchen und eine Saison-Rangliste
+  //     füllen.
+  const RIVAL_NAMES = ['Gestüt Falkenhof', 'Gestüt Lindenau', 'Hof Rabenstein', 'Gestüt Morgentau', 'Sonnenhof Weber', 'Gestüt Drei Eichen'];
+
+  function initRivals(state) {
+    const list = RIVAL_NAMES.slice().sort(() => Math.random() - 0.5).slice(0, 5);
+    return list.map((name, i) => {
+      const prestige = clamp(Math.round(Model.gauss(150 + i * 25, 70)), 30, 480);
+      const n = 5 + Model.randInt(0, 2);
+      const horses = [];
+      for (let k = 0; k < n; k++) {
+        horses.push(Model.generateHorse({
+          quality: clamp(Model.gauss(0.5 + prestige / 900, 0.14), 0.2, 0.96), approved: true,
+          ageYears: 4 + Math.random() * 9, currentWeek: state.week, origin: 'Rivale',
+        }));
+      }
+      return { id: 'rv' + i + Math.random().toString(36).slice(2, 6), name: name, prestige: prestige, seasonPoints: 0, horses: horses };
+    });
+  }
+
+  function advanceRivals(state) {
+    (state.rivals || []).forEach((rv) => {
+      rv.prestige = Math.max(20, rv.prestige * 0.997);
+      rv.horses.forEach((h) => {
+        const d = DISC[Model.randInt(0, DISC.length - 1)];
+        if (h.skill[d] < h.potential[d]) h.skill[d] = clamp(h.skill[d] + Model.gauss(0.35, 0.15), 0, h.potential[d]);
+      });
+      rv.horses.forEach((h, i) => {
+        if (Model.ageYears(h, state.week) > 19 || Math.random() < 0.008) {
+          rv.horses[i] = Model.generateHorse({
+            quality: clamp(0.5 + rv.prestige / 900 + Model.gauss(0, 0.12), 0.2, 0.97), approved: true,
+            ageYears: 3 + Math.random() * 4, currentWeek: state.week, origin: 'Rivale',
+          });
+        }
+      });
+    });
+  }
+
+  // Aktuelle Saison-Rangliste: dein Gestüt + alle Rivalen nach Saisonpunkten.
+  function mySeasonPoints(state) {
+    return state.horses.reduce((s, h) => s + Object.keys(h.turnierPunkte || {}).reduce((a, k) => a + h.turnierPunkte[k], 0), 0);
+  }
+  function seasonStandings(state) {
+    const rows = [{ name: state.studName, points: Math.round(mySeasonPoints(state)), isPlayer: true, prestige: Math.round(state.prestige) }];
+    (state.rivals || []).forEach((rv) => rows.push({ name: rv.name, points: Math.round(rv.seasonPoints || 0), isPlayer: false, prestige: Math.round(rv.prestige) }));
+    rows.sort((a, b) => b.points - a.points || b.prestige - a.prestige);
+    return rows;
+  }
+
+  // Füllt das Starterfeld: passende Rivalenpferde + anonyme Auffüllung.
+  function buildField(state, show) {
     const field = [];
-    const careShow = careDef(state).showBonus;   // Ausstrahlung durch Pflege
+    const pool = [];
+    (state.rivals || []).forEach((rv) => rv.horses.forEach((h) => {
+      const rel = show.type === 'sport' ? (h.skill[show.discipline] || 0) : h.conformation;
+      pool.push({ rv: rv, h: h, rel: rel });
+    }));
+    pool.sort((a, b) => Math.abs(a.rel - show.fieldStrength) - Math.abs(b.rel - show.fieldStrength));
+    const nRivals = Math.min(pool.length, 4 + show.level);
+    for (let i = 0; i < nRivals; i++) {
+      const p = pool[i];
+      field.push({ id: 'rv:' + p.rv.id + ':' + i, name: p.h.name + ' — ' + p.rv.name, player: false, rival: p.rv, rivalHorse: p.h,
+        score: scoreHorse(p.h, show, state.week) });
+    }
+    const nFill = Math.max(3, (7 + show.level) - nRivals);
+    for (let i = 0; i < nFill; i++) {
+      field.push({ id: 'ai' + i, name: Names.randName(), player: false, score: show.fieldStrength + Model.gauss(0, 14) });
+    }
+    return field;
+  }
+
+  // Führt eine Schau aus: Spielerpferde + Rivalen + Auffüllung.
+  function runShow(state, show) {
+    const careShow = careDef(state).showBonus;
+    const field = buildField(state, show);
     show.entered.forEach((id) => {
       const h = state.horses.find((x) => x.id === id);
-      if (h) field.push({ id: id, name: h.name, player: true, score: scoreHorse(h, show, state.week) + careShow });
+      if (h) field.push({ id: id, name: h.name, player: true, hRef: h, score: scoreHorse(h, show, state.week) + careShow });
     });
-    const aiCount = 7 + show.level;
-    for (let i = 0; i < aiCount; i++) {
-      field.push({
-        id: 'ai' + i, name: Names.randName(), player: false,
-        score: show.fieldStrength + Model.gauss(0, 16),
-      });
-    }
     field.sort((a, b) => b.score - a.score);
     const leaderScore = field.length ? field[0].score : 0;
 
-    // Preisgeld: 40/25/15/12/8 % auf die ersten fünf.
     const split = [0.4, 0.25, 0.15, 0.12, 0.08];
-    // Saison-Punkte je Platzierung (mit Klasse skaliert).
     const ptsTable = [10, 7, 5, 4, 3, 2, 1];
-    const results = field.map((f, idx) => {
+    const key = show.type === 'sport' ? show.discipline : 'Zucht';
+    let totalPrize = 0, prestigeGain = 0, travelCost = 0;
+    const results = [];
+
+    field.forEach((f, idx) => {
       const place = idx + 1;
       const prize = place <= 5 ? Math.round(show.prizePool * split[place - 1]) : 0;
-      return {
-        name: f.name, player: f.player, id: f.id, place: place,
-        score: Math.round(f.score), scoreLabel: showScoreLabel(show, f.score, leaderScore), prize: prize,
-      };
-    });
+      const pts = (place <= 7 ? ptsTable[place - 1] : 0) * show.level;
+      results.push({ name: f.name, player: !!f.player, rival: f.rival ? f.rival.name : null, id: f.id, place: place,
+        score: Math.round(f.score), scoreLabel: showScoreLabel(show, f.score, leaderScore), prize: prize });
 
-    let totalPrize = 0, prestigeGain = 0, travelCost = 0;
-    results.forEach((r) => {
-      if (!r.player) return;
-      const h = state.horses.find((x) => x.id === r.id);
-      if (!h) return;
-      totalPrize += r.prize;
-      travelCost += show.travelCost || 0;
-      h.earnings += r.prize;
-      h.shows += 1;
-      h.energy = clamp(h.energy - (show.energyCost || 20), 0, 100);   // Turnier kostet Kraft
-      if (r.place === 1) { h.wins += 1; prestigeGain += 6 + show.level * 4; }
-      else if (r.place <= 3) prestigeGain += 3 + show.level * 2;
-      else if (r.place <= 5) prestigeGain += 1 + show.level;
-      // Saison-Punkte je Disziplin (bzw. "Zucht").
-      const key = show.type === 'sport' ? show.discipline : 'Zucht';
-      h.turnierPunkte = h.turnierPunkte || {};
-      const pts = (r.place <= 7 ? ptsTable[r.place - 1] : 0) * show.level;
-      if (pts) h.turnierPunkte[key] = (h.turnierPunkte[key] || 0) + pts;
-      h.showLog.unshift({ week: state.week, show: show.name, place: r.place, field: results.length, prize: r.prize, scoreLabel: r.scoreLabel });
-      if (h.showLog.length > 12) h.showLog.pop();
-      if (show.type === 'sport') {
-        h.skill[show.discipline] = clamp(h.skill[show.discipline] + (r.place <= 3 ? 1.2 : 0.5), 0, h.potential[show.discipline]);
+      if (f.player && f.hRef) {
+        const h = f.hRef;
+        totalPrize += prize;
+        travelCost += show.travelCost || 0;
+        h.earnings += prize;
+        h.shows += 1;
+        h.energy = clamp(h.energy - (show.energyCost || 20), 0, 100);
+        if (place === 1) { h.wins += 1; prestigeGain += 6 + show.level * 4; }
+        else if (place <= 3) prestigeGain += 3 + show.level * 2;
+        else if (place <= 5) prestigeGain += 1 + show.level;
+        if (!show.champ && show.type === 'sport' && pts) { h.turnierPunkte = h.turnierPunkte || {}; h.turnierPunkte[key] = (h.turnierPunkte[key] || 0) + pts; }
+        h.showLog.unshift({ week: state.week, show: show.name, place: place, field: field.length, prize: prize, scoreLabel: results[results.length - 1].scoreLabel });
+        if (h.showLog.length > 12) h.showLog.pop();
+        if (show.type === 'sport') h.skill[show.discipline] = clamp(h.skill[show.discipline] + (place <= 3 ? 1.2 : 0.5), 0, h.potential[show.discipline]);
+
+        // Zuchtschau: Top 3 bekommen mindestens eine Ib-Prämie.
+        if (show.type === 'zucht' && place <= 3 && praemieRank(h.praemie) < 1) {
+          h.praemie = 'Ib-Prämie';
+          results[results.length - 1].note = 'Ib-Prämie';
+        }
+        // Körung / Prämierung: Zuchtzulassung + Prämie + evtl. Siegertitel.
+        if (show.type === 'koerung') {
+          const passLine = Math.ceil(field.length * 0.6);
+          const buch = lpPassed(h) ? 'Zuchtbuch I' : 'Zuchtbuch II';
+          const status = (h.sex === 'hengst' ? 'gekört, ' : 'eingetragen, ') + buch;
+          if (place <= passLine && approvalRank(status) > approvalRank(h.zuchtzulassung)) {
+            h.zuchtzulassung = status;
+            results[results.length - 1].note = status;
+          } else if (place > passLine && !h.zuchtzulassung) {
+            results[results.length - 1].note = 'nicht zugelassen';
+          }
+          let pr = null;
+          if (place === 1) pr = (lpPassed(h) && f.score > 78) ? 'Staatsprämie' : 'Ia-Prämie';
+          else if (place <= 3) pr = 'Ia-Prämie';
+          else if (place <= 8) pr = 'Ib-Prämie';
+          if (pr && praemieRank(pr) > praemieRank(h.praemie)) {
+            h.praemie = pr;
+            results[results.length - 1].note = (results[results.length - 1].note ? results[results.length - 1].note + ' · ' : '') + pr;
+          }
+          if (place === 1) h.titel = h.sex === 'hengst' ? 'Siegerhengst' : 'Siegerstute';
+        }
+      } else if (f.rival) {
+        if (pts) f.rival.seasonPoints = (f.rival.seasonPoints || 0) + pts;
+        if (place === 1) f.rival.prestige += 2 + show.level;
+        else if (place <= 3) f.rival.prestige += 1 + show.level * 0.4;
       }
     });
 
     show.done = true;
     return { results: results, totalPrize: totalPrize, prestigeGain: prestigeGain, travelCost: travelCost };
+  }
+
+  // --- Jahres-Championat: am Ende jedes Spieljahrs (52 Wochen). Je Disziplin
+  //     ein Finale für alle Pferde ab CHAMP_QUAL Saisonpunkten, plus ein
+  //     Gesamt-Titel für das Gestüt mit den meisten Saisonpunkten.
+  const CHAMP_QUAL = 20;
+  function championshipQualified(state) {
+    const out = {};
+    DISC.forEach((d) => {
+      out[d] = state.horses.filter((h) => h.turnierPunkte && (h.turnierPunkte[d] || 0) >= CHAMP_QUAL);
+    });
+    return out;
+  }
+  function runChampionship(state) {
+    const year = state.seasonYear || 1;
+    const qual = championshipQualified(state);
+    const summary = { year: year, disciplines: {}, results: {}, overall: null, playerPrize: 0, playerPrestige: 0 };
+
+    DISC.forEach((d) => {
+      const qs = qual[d];
+      if (!qs.length) { summary.disciplines[d] = null; return; }
+      const show = {
+        id: 'champ_' + d, type: 'sport', discipline: d, level: 5, champ: true,
+        name: 'Championat ' + d + ' (Jahr ' + year + ')', prizePool: 90000,
+        entryFee: 0, travelCost: 0, energyCost: 20, minSkill: 0, minConf: 0, minEnergy: 0, minHealth: 0,
+        fieldStrength: 80, entered: qs.map((h) => h.id), done: false,
+      };
+      const r = runShow(state, show);
+      summary.disciplines[d] = r.results[0] ? r.results[0].name : null;
+      summary.results[d] = r.results.slice(0, 8);
+      summary.playerPrize += r.totalPrize;
+      summary.playerPrestige += r.prestigeGain;
+      state.cash += r.totalPrize;
+      state.prestige += r.prestigeGain;
+    });
+
+    const standings = seasonStandings(state);
+    const champ = standings[0];
+    summary.overall = champ ? champ.name : null;
+    if (champ && champ.isPlayer) { state.prestige += 60; summary.playerPrestige += 60; }
+
+    state.championHistory = state.championHistory || [];
+    state.championHistory.unshift({ year: year, overall: summary.overall, disciplines: summary.disciplines });
+    if (state.championHistory.length > 10) state.championHistory.pop();
+
+    // Saison zurücksetzen.
+    state.horses.forEach((h) => { h.turnierPunkte = {}; });
+    (state.rivals || []).forEach((rv) => { rv.seasonPoints = 0; });
+    state.seasonYear = year + 1;
+    return summary;
   }
 
   function fmtEur(v) {
@@ -525,6 +682,9 @@ const Economy = (function () {
     applySaleImpact: applySaleImpact,
     eligibilityReason: eligibilityReason,
     showScoreLabel: showScoreLabel,
+    approvalRank: approvalRank,
+    praemieRank: praemieRank,
+    lpPassed: lpPassed,
     rollMarket: rollMarket,
     rollStudRoster: rollStudRoster,
     rollAuction: rollAuction,
@@ -534,6 +694,13 @@ const Economy = (function () {
     rollShows: rollShows,
     scoreHorse: scoreHorse,
     runShow: runShow,
+    initRivals: initRivals,
+    advanceRivals: advanceRivals,
+    seasonStandings: seasonStandings,
+    mySeasonPoints: mySeasonPoints,
+    championshipQualified: championshipQualified,
+    runChampionship: runChampionship,
+    CHAMP_QUAL: CHAMP_QUAL,
     fmtEur: fmtEur,
   };
 })();
