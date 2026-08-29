@@ -56,6 +56,15 @@ const UI = (function () {
     return '';
   }
 
+  // Aufklappbare Einzelnoten (Exterieur / Interieur) in der Stall-Detailansicht.
+  function subTraitDetails(label, keys, obj, summary) {
+    const lines = keys.map((t) =>
+      '<div class="statline"><span class="small">' + esc(t) + '</span>' + plainBar(obj[t]) + '<span></span></div>'
+    ).join('');
+    return '<details class="subtraits"><summary><span>' + label + '</span> ' + plainBar(Math.round(summary)) +
+      '</summary>' + lines + '</details>';
+  }
+
   // --- Topbar --------------------------------------------------------------
   function renderTopbar() {
     const s = Game.state;
@@ -251,8 +260,8 @@ const UI = (function () {
           <div class="row between"><b>Ausbildung / Potenzial</b><span class="muted small">Balken hell = genet. Potenzial</span></div>
           ${statLines}
         </div>
-        <div class="statline"><span>Exterieur</span>${plainBar(h.conformation)}<span></span></div>
-        <div class="statline"><span title="Charakter / Rittigkeit">Interieur</span>${plainBar(h.temperament)}<span></span></div>
+        ${subTraitDetails('Exterieur', Model.EXTERIEUR_TRAITS, Model.exterieurOf(h), h.conformation)}
+        ${subTraitDetails('Interieur', Model.INTERIEUR_TRAITS, Model.interieurOf(h), h.temperament)}
         <div class="statline"><span>Gesundheit</span>${plainBar(h.health, h.health < 60 ? 'danger' : '')}<span></span></div>
         <div class="statline"><span>Energie</span>${plainBar(h.energy, 'warn')}<span></span></div>
 
@@ -289,16 +298,34 @@ const UI = (function () {
     return e ? e.horse : null;
   }
 
-  // Erwartungswert-Tabelle einer Anpaarung.
-  function forecastTable(fc) {
-    const cell = (o) => `<td class="right">${o.parentMean == null ? '–' : o.parentMean}</td>` +
-      `<td class="right"><b>${o.expect}</b></td>` +
-      `<td class="right muted small">${Math.round(o.min)}–${Math.round(o.max)}</td>`;
-    let rows = DISC.map((d) => `<tr><td>${d}</td>${cell(fc.begabungen[d])}</tr>`).join('');
-    rows += `<tr><td><b>Exterieur</b></td>${cell(fc.exterieur)}</tr>`;
-    rows += `<tr><td><b>Interieur</b></td>${cell(fc.interieur)}</tr>`;
-    rows += `<tr><td><b>Gesundheit</b></td>${cell(Object.assign({ parentMean: null }, fc.gesundheit))}</tr>`;
-    return `<table class="small"><thead><tr><th>Wert</th><th class="right">Ø Eltern</th><th class="right">Erwartung</th><th class="right">Streubereich</th></tr></thead><tbody>${rows}</tbody></table>`;
+  // Erwartungswert-Tabelle: je Wert Hengst | Stute | Ø | Erwartung | Streubereich.
+  // Die Erwartungs-Zelle wird gegen den Stutenwert eingefärbt (hebt/senkt).
+  function fcRow(label, o, damVal) {
+    const s = o.sire == null ? '–' : o.sire;
+    const d = o.dam == null ? '–' : o.dam;
+    const pm = o.parentMean == null ? '–' : o.parentMean;
+    let cls = '';
+    if (damVal != null) cls = o.expect >= damVal + 2 ? 'cmp-good' : (o.expect <= damVal - 3 ? 'cmp-bad' : '');
+    return `<tr><td>${esc(label)}</td><td class="right">${s}</td><td class="right">${d}</td>` +
+      `<td class="right muted small">${pm}</td><td class="right ${cls}"><b>${o.expect}</b></td>` +
+      `<td class="right muted small">${Math.round(o.min)}–${Math.round(o.max)}</td></tr>`;
+  }
+  function fcTable(rowsHtml) {
+    return `<table class="small"><thead><tr><th>Wert</th><th class="right">Hengst</th><th class="right">Stute</th>` +
+      `<th class="right">Ø</th><th class="right">Erwartung</th><th class="right">Streubereich</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  }
+  function begabungTable(fc, dam) {
+    return fcTable(DISC.map((d) => fcRow(d, fc.begabungen[d], dam.potential[d])).join(''));
+  }
+  function subTable(fc, group, dam) {
+    const keys = group === 'Exterieur' ? Model.EXTERIEUR_TRAITS : Model.INTERIEUR_TRAITS;
+    const traits = group === 'Exterieur' ? fc.exterieurTraits : fc.interieurTraits;
+    const damObj = group === 'Exterieur' ? Model.exterieurOf(dam) : Model.interieurOf(dam);
+    const summary = group === 'Exterieur' ? fc.exterieur : fc.interieur;
+    let rows = keys.map((t) => fcRow(t, traits[t], damObj[t])).join('');
+    rows += fcRow('Ø ' + group, Object.assign({ sire: null, dam: null }, summary),
+      group === 'Exterieur' ? dam.conformation : dam.temperament);
+    return fcTable(rows);
   }
 
   views.zucht = function () {
@@ -315,13 +342,15 @@ const UI = (function () {
         esc(h.name) + ' (' + esc(h.breed) + ', ' + phenoOf(h).base + ', ' + ageYears(h).toFixed(0) + 'J.)</option>')
     ).join('');
 
+    const selMare = breedDam ? Game.getHorse(breedDam) : null;
+    const passung = (h) => selMare ? ' · Passung ' + Model.matingMatch(h, selMare).score : '';
     const sireOwn = stallions.map((h) => '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
-      esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + '</option>').join('');
+      esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + passung(h) + '</option>').join('');
     const sireStud = roster.map((x) => {
       const h = x.horse;
       return '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
         esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' +
-        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')</option>';
+        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')' + passung(h) + '</option>';
     }).join('');
     const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
       (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
@@ -342,33 +371,31 @@ const UI = (function () {
       if (plan.error) planHtml = '<p class="tag warn">' + esc(plan.error) + '</p>';
       else {
         const fc = plan.statForecast;
+        const dam = plan.dam;
+        const m = plan.match;
         const coiPct = (plan.coi * 100).toFixed(1);
         const coiCls = plan.coi >= 0.125 ? 'warn' : plan.coi >= 0.0625 ? '' : 'good';
-        // Vergleich Fohlen-Erwartung gegen die Stute (welcher Hengst passt?).
-        const dam = plan.dam;
-        const deltas = DISC.map((d) => ({ d: d, v: fc.begabungen[d].expect - dam.potential[d] }));
-        const ups = deltas.filter((x) => x.v >= 3).sort((a, b) => b.v - a.v);
-        const downs = deltas.filter((x) => x.v <= -3).sort((a, b) => a.v - b.v);
-        const eign = (ups.length || downs.length)
-          ? '<div class="small">Gegenüber der Stute: ' +
-            (ups.length ? '<span class="tag good">↑ ' + ups.map((x) => x.d + ' +' + x.v).join(', ') + '</span> ' : '') +
-            (downs.length ? '<span class="tag warn">↓ ' + downs.map((x) => x.d + ' ' + x.v).join(', ') + '</span>' : '') +
-            '</div>'
-          : '<div class="small muted">Begabungen etwa auf Stutenniveau.</div>';
+        const scoreCls = m.score >= 66 ? 'good' : m.score >= 45 ? '' : 'warn';
+        const traitList = (arr) => arr.map((x) => x.group[0] + ': ' + x.trait + ' ' + x.from + '→' + x.to).join(' · ');
 
         planHtml = `
+          <div class="row between"><span>Passung Hengst ↔ Stute</span><b class="tag ${scoreCls}" style="font-size:1rem">${m.score} / 100</b></div>
+          ${m.improves.length ? '<div class="small"><span class="tag good">gleicht aus</span> ' + esc(traitList(m.improves)) + '</div>' : ''}
+          ${m.worsens.length ? '<div class="small"><span class="tag warn">verschlechtert</span> ' + esc(traitList(m.worsens)) + '</div>' : ''}
           <div class="row between"><span>Fohlenrasse</span><b>${esc(fc.foalBreed)}</b></div>
-          ${fc.mix ? '<p class="small tag warn">Rassenkreuzung: „Mix" hat kein Zuchtbuch — Marktwert rund −50 %, Zuchtschau-Malus, Begabungen im Schnitt niedriger.</p>' : ''}
+          ${fc.mix ? '<p class="small tag warn">„Mix" hat kein Zuchtbuch — Marktwert rund −50 %, Zuchtschau-Malus, Begabungen/Exterieur im Schnitt −5.</p>' : ''}
           <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
           ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — spürbare Abzüge bei Gesundheit, Begabungen und Fruchtbarkeit.</p>' : ''}
           <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b></div>
           <div class="row between"><span>Deckgebühr${plan.external ? ' (Deckstation)' : ''}</span><b>${fmt(plan.fee)}</b></div>
 
-          <p style="margin:.6rem 0 .2rem"><b>Erwartete Fohlenwerte</b> <span class="muted small">(Ø Eltern → Erwartung, mit COI-/Mix-Abzug)</span></p>
-          ${forecastTable(fc)}
-          ${eign}
+          <p style="margin:.6rem 0 .2rem"><b>Begabungen</b> <span class="muted small">(grün = hebt die Stute, rot = senkt sie)</span></p>
+          ${begabungTable(fc, dam)}
+          <details style="margin-top:.4rem"><summary class="small"><b>Exterieur im Detail</b> (6 Einzelnoten)</summary>${subTable(fc, 'Exterieur', dam)}</details>
+          <details style="margin-top:.3rem"><summary class="small"><b>Interieur im Detail</b> (5 Einzelnoten)</summary>${subTable(fc, 'Interieur', dam)}</details>
+          <div class="row between small" style="margin-top:.3rem"><span>Gesundheit (Erwartung)</span><b>${fc.gesundheit.expect} <span class="muted">(${Math.round(fc.gesundheit.min)}–100)</span></b></div>
 
-          <p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel-Simulation)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
+          <p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
           <ul class="foal-forecast small">
             ${plan.forecast.outcomes.map((o) => '<li>' + o.pct + ' %&nbsp; ' + esc(o.label) + '</li>').join('')}
           </ul>
@@ -376,18 +403,30 @@ const UI = (function () {
       }
     }
 
-    // Deckstation-Übersicht
-    const studCards = roster.map((x) => {
+    // Deckstation-Übersicht. Ist eine Stute gewählt, wird nach Passung sortiert.
+    const rosterRanked = roster.map((x) => ({
+      x: x, m: selMare ? Model.matingMatch(x.horse, selMare) : null,
+    }));
+    if (selMare) rosterRanked.sort((a, b) => b.m.score - a.m.score);
+    const studCards = rosterRanked.map(({ x, m }) => {
       const h = x.horse;
       const best = Model.bestDiscipline(h);
+      const passCell = m
+        ? '<td class="small"><b class="tag ' + (m.score >= 66 ? 'good' : m.score >= 45 ? '' : 'warn') + '">' + m.score + '</b>' +
+          (m.improves.length ? '<br><span class="muted">+ ' + esc(m.improves.slice(0, 2).map((i) => i.trait).join(', ')) + '</span>' : '') + '</td>'
+        : '';
       return `<tr class="clickable" data-action="pick-stud" data-id="${h.id}">
         <td><b>${esc(h.name)}</b><br><span class="muted small">${esc(h.breed)}${x.elite ? ' · <span class="tag rare">Spitzenvererber</span>' : ''}</span></td>
         <td class="small">${esc(phenoOf(h).base)}<br>${ageYears(h).toFixed(0)} J.</td>
         <td class="small">Ext. ${Math.round(h.conformation)}<br>Int. ${Math.round(h.temperament)}</td>
-        <td class="small">${best} ${Math.round(h.potential[best])}<br><span class="muted">Begabungen</span></td>
-        <td class="right"><b>${fmt(x.studFee)}</b><br><span class="muted small">Deckgeld</span></td>
+        <td class="small">${best} ${Math.round(h.potential[best])}</td>
+        ${passCell}
+        <td class="right"><b>${fmt(x.studFee)}</b></td>
       </tr>`;
     }).join('');
+    const studHead = selMare
+      ? `<tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Beg.</th><th>Passung zu ${esc(selMare.name)}</th><th class="right">Deckgeld</th></tr>`
+      : '<tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Begabung</th><th class="right">Deckgeld</th></tr>';
 
     return `
       <div class="grid cols-2">
@@ -413,18 +452,21 @@ const UI = (function () {
 
       <div class="card" style="margin-top:1rem">
         <h3>🏇 Deckstation</h3>
-        <p class="small muted">Fremde Hengste gegen Deckgeld — auch ohne eigenen Spitzenhengst. Zeile anklicken = als Hengst übernehmen. Roster wechselt alle 6 Wochen (nächster: Woche ${s.nextStudWeek || 0}).</p>
-        <table><thead><tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Begabung</th><th class="right">Deckgeld</th></tr></thead><tbody>${studCards}</tbody></table>
+        <p class="small muted">Fremde Hengste gegen Deckgeld — auch ohne eigenen Spitzenhengst. Zeile anklicken = als Hengst übernehmen.
+        ${selMare ? 'Sortiert nach <b>Passung zu ' + esc(selMare.name) + '</b> (0–100): wie gut der Hengst ihre schwachen Einzelnoten ausgleicht, ohne ihre Stärken zu verlieren.' : 'Wähle oben eine Stute, dann wird nach Passung sortiert.'}
+        Roster wechselt alle 6 Wochen (nächster: Woche ${s.nextStudWeek || 0}).</p>
+        <table><thead>${studHead}</thead><tbody>${studCards}</tbody></table>
       </div>
 
       <div class="card" style="margin-top:1rem">
         <h3>Wie die Werte vererbt werden</h3>
         <p class="small muted">
-          <b>Begabungen</b> (6 Disziplinen), <b>Exterieur</b> und <b>Interieur</b> (Charakter) erben nach:
-          <em>Erwartung = Ø der Elternwerte × 0,94 + 50 × 0,06 − COI-Abzug − Mix-Abzug</em>, dann eine
-          Zufallsstreuung (Begabung ±6, Exterieur ±4, Interieur ±9). Der 6-%-Zug zur Mitte („Regression")
-          heißt: zwei Spitzenpferde geben im Schnitt ein minimal schwächeres Fohlen — du musst weiter aufwerten.
-          <b>Gesundheit</b> startet bei ~96 und wird fast nur durch Inzucht gedrückt (COI × 72).
+          <b>Begabungen</b> (6 Disziplinen), <b>Exterieur</b> (6 Einzelnoten: Kopf &amp; Hals, Schulter, Rücken,
+          Hinterhand, Fundament, Bewegung) und <b>Interieur</b> (5 Einzelnoten: Nervenstärke,
+          Leistungsbereitschaft, Rittigkeit, Lernwille, Umgänglichkeit) erben <em>jede für sich</em> nach:
+          <em>Erwartung = Ø(Hengst, Stute) − COI-Abzug − Mix-Abzug</em>, plus ein kleiner Zug Richtung Mitte,
+          dann Zufallsstreuung. Genau deshalb kannst du eine im Rücken schwache Stute an einem im Rücken
+          starken Hengst „reparieren". <b>Gesundheit</b> startet bei ~96, fast nur Inzucht drückt sie (COI × 72).
           <b>Farbe</b> ist reine Mendel-Vererbung je Genort; homozygotes Frame Overo / Roan ist letal.
         </p>
       </div>`;

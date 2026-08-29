@@ -1,53 +1,55 @@
 /* ============================================================================
    Pferde-Modell: Erzeugung, Alterung, Bewertung, Inzucht (COI) und die
-   komplette Werte-Vererbung (Exterieur / Interieur / Begabungen).
+   komplette Werte-Vererbung.
    Globales `Model`. Hängt an `Genetics` und `Names`.
 
    ----------------------------------------------------------------------------
-   VERERBUNG DER WERTE  (siehe breed() und foalStatForecast())
+   WERTE EINES PFERDES
 
-   Alle vererbten Werte laufen nach demselben Schema:
+   - Begabungen: 6 Disziplinen (Dressur, Springen, ...), je Ausbildung + Potenzial.
+   - Exterieur (Gebäude): 6 Einzelnoten - Kopf & Hals, Schulter, Rücken,
+     Hinterhand, Fundament, Bewegung. `conformation` = Mittel daraus.
+   - Interieur (Charakter/Rittigkeit): 5 Einzelnoten - Nervenstärke,
+     Leistungsbereitschaft, Rittigkeit, Lernwille, Umgänglichkeit.
+     `temperament` = Mittel daraus.
+   - Gesundheit, Energie.
 
-       Erwartung = Elternmittel * (1 - k) + Zugkraft * k
-                   + Rasse-Typkorrektur
-                   - Inzucht-Abzug (COI)
-                   - Mix-Abzug (nur bei Rassenkreuzung)
-       Ergebnis  = Erwartung + Zufallsstreuung (Rekombination)
+   VERERBUNG (siehe breed() und foalStatForecast()) - jede Einzelnote erbt
+   unabhängig nach demselben Schema:
 
-   - Elternmittel = (Vater + Mutter) / 2. Das ist der beste Schätzer -
-     deshalb kann man sich passende Anpaarungen ausrechnen.
-   - k = "Regression zur Mitte": ein Teil zieht Richtung Durchschnitt (50)
-     bzw. Richtung Rasse-Standard. Zwei Spitzenpferde bekommen im Schnitt
-     ein leicht schwächeres Fohlen -> man muss weiter aufwerten.
-   - COI senkt Begabungen, Exterieur, Interieur und vor allem Gesundheit.
-   - Mix (Vater- und Mutterrasse verschieden): das Fohlen ist typlos, Ø der
-     Begabungen sinkt, Exterieur sinkt, und der Marktwert wird zusätzlich
-     halbiert (siehe valuation()).
-   - Zufallsstreuung: Begabungen ±~6, Exterieur ±~4, Interieur ±~9 (Charakter
-     ist am wenigsten erblich), Gesundheit ±~4.
+       Erwartung  = Ø(Vater, Mutter) * (1 - k) + Zugkraft * k
+                    - COI-Abzug  - Mix-Abzug
+       Fohlenwert = Erwartung + Zufallsstreuung
+
+   Weil jede Einzelnote getrennt vererbt, kann eine im Rücken schwache Stute
+   an einem im Rücken starken Hengst ein Fohlen bekommen, das im Rücken etwa
+   in der Mitte liegt - genau wie in der echten Zucht. Der Zuchtplaner rechnet
+   das vor (matingMatch()).
    ========================================================================== */
 const Model = (function () {
   'use strict';
 
   const DISC = Names.DISCIPLINES;
   const WEEKS_PER_YEAR = 52;
-  const GESTATION_WEEKS = 48;         // ~11 Monate
-  const MATURITY_YEARS = 3;           // ab hier Training/Sport/Zucht
+  const GESTATION_WEEKS = 48;
+  const MATURITY_YEARS = 3;
   const MAX_BREED_AGE = 22;
 
-  // Vererbungs-Parameter (zentral, damit die Vorschau exakt zur echten
-  // Zucht passt).
+  const EXTERIEUR_TRAITS = ['Kopf & Hals', 'Schulter', 'Rücken', 'Hinterhand', 'Fundament', 'Bewegung'];
+  const INTERIEUR_TRAITS = ['Nervenstärke', 'Leistungsbereitschaft', 'Rittigkeit', 'Lernwille', 'Umgänglichkeit'];
+
   const INH = {
-    begabungRegression: 0.06,   // k Richtung 50
+    begabungRegression: 0.06,
     begabungSpread: 6,
     begabungCoi: 38,
     begabungMix: 5,
-    exterieurTypePull: 0.08,    // k Richtung Rasse-Standard-Exterieur
-    exterieurSpread: 4,
+    exterieurTypePull: 0.08,      // Zug Richtung Rasse-Standard
+    exterieurTraitSpread: 6,
     exterieurCoi: 30,
     exterieurMix: 5,
-    interieurCoi: 8,
-    interieurSpread: 9,
+    interieurRegression: 0.05,    // Zug Richtung 55 (etwas "gutmütiger" Schnitt)
+    interieurTraitSpread: 11,
+    interieurCoi: 10,
     gesundheitBase: 96,
     gesundheitCoi: 72,
     gesundheitMix: 3,
@@ -59,19 +61,16 @@ const Model = (function () {
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function gauss(mean, sd) {
-    // Box-Muller
     const u = 1 - Math.random(), v = Math.random();
     return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   }
   function randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
   function round(v) { return Math.round(v); }
+  function mean(obj, keys) { return keys.reduce((s, k) => s + obj[k], 0) / keys.length; }
 
-  function ageYears(horse, currentWeek) {
-    return (currentWeek - horse.bornWeek) / WEEKS_PER_YEAR;
-  }
+  function ageYears(horse, currentWeek) { return (currentWeek - horse.bornWeek) / WEEKS_PER_YEAR; }
   function isAdult(horse, currentWeek) { return ageYears(horse, currentWeek) >= MATURITY_YEARS; }
 
-  // Alters-Leistungskurve (0..1): Aufbau bis ~7, Plateau, Abbau ab ~16.
   function ageFactor(y) {
     if (y < 3) return clamp(0.35 + (y - 1) * 0.18, 0.1, 0.75);
     if (y < 7) return clamp(0.75 + (y - 3) * 0.0625, 0.75, 1);
@@ -87,13 +86,26 @@ const Model = (function () {
     return Names.BREEDS[breed] || { conf: 66, value: isMixBreed(breed) ? 0.55 : 1, aff: {} };
   }
 
-  // --- Neues Pferd "aus dem Nichts" (Markt / Auktion / Deckstation / Start).
+  // Einzelnoten lesen - auch für alte Spielstände ohne Detailwerte (dann
+  // wird die Sammelnote gleichmäßig auf alle Einzelnoten verteilt).
+  function exterieurOf(h) {
+    if (h.exterieur) return h.exterieur;
+    const o = {}; EXTERIEUR_TRAITS.forEach((t) => (o[t] = h.conformation != null ? h.conformation : 60));
+    return o;
+  }
+  function interieurOf(h) {
+    if (h.interieur) return h.interieur;
+    const o = {}; INTERIEUR_TRAITS.forEach((t) => (o[t] = h.temperament != null ? h.temperament : 60));
+    return o;
+  }
+
+  // --- Neues Pferd "aus dem Nichts".
   function generateHorse(opts) {
     opts = opts || {};
     const breed = opts.breed || Names.BREED_KEYS[randInt(0, Names.BREED_KEYS.length - 1)];
     const bdef = breedDef(breed);
     const sex = opts.sex || (Math.random() < 0.5 ? 'hengst' : 'stute');
-    const quality = opts.quality != null ? opts.quality : clamp(gauss(0.5, 0.16), 0.05, 0.98); // 0..1
+    const quality = opts.quality != null ? opts.quality : clamp(gauss(0.5, 0.16), 0.05, 0.98);
     const y = opts.ageYears != null ? opts.ageYears : (3 + Math.random() * 8);
     const bornWeek = (opts.currentWeek || 0) - Math.round(y * WEEKS_PER_YEAR);
 
@@ -103,7 +115,18 @@ const Model = (function () {
       const aff = (bdef.aff && bdef.aff[d]) || 1;
       potential[d] = clamp(round((30 + quality * 55 + gauss(0, 9)) * aff), 5, 100);
     });
-    const conformation = clamp(round(bdef.conf + (quality - 0.5) * 34 + gauss(0, 5)), 20, 100);
+
+    // Exterieur: Einzelnoten um ein qualitätsabhängiges Zentrum streuen.
+    const confCenter = bdef.conf + (quality - 0.5) * 34 + gauss(0, 4);
+    const exterieur = {};
+    EXTERIEUR_TRAITS.forEach((t) => { exterieur[t] = clamp(round(confCenter + gauss(0, 8)), 10, 100); });
+    const conformation = clamp(round(mean(exterieur, EXTERIEUR_TRAITS)), 10, 100);
+
+    // Interieur: Einzelnoten um ein eigenes Zentrum.
+    const tempCenter = gauss(58, 12) + (quality - 0.5) * 10;
+    const interieur = {};
+    INTERIEUR_TRAITS.forEach((t) => { interieur[t] = clamp(round(tempCenter + gauss(0, 11)), 10, 99); });
+    const temperament = clamp(round(mean(interieur, INTERIEUR_TRAITS)), 10, 99);
 
     const skill = emptySkill();
     if (y >= MATURITY_YEARS && !opts.untrained) {
@@ -121,8 +144,10 @@ const Model = (function () {
       genotype: genotype,
       potential: potential,
       skill: skill,
+      exterieur: exterieur,
+      interieur: interieur,
       conformation: conformation,
-      temperament: clamp(round(gauss(60, 15)), 15, 98),   // = Interieur
+      temperament: temperament,
       health: clamp(round(gauss(88, 8)), 40, 100),
       energy: 100,
       quality: quality,
@@ -151,21 +176,30 @@ const Model = (function () {
     return m;
   }
 
-  // Kompakter "Steckbrief" eines Elternteils - so viel muss zum Zeitpunkt
-  // der Bedeckung gespeichert werden, damit das Fohlen später korrekt erbt,
-  // auch wenn der Hengst verkauft wurde oder aus der Deckstation rotiert ist.
   function parentSnapshot(h) {
     return {
       id: h.id, name: h.name, sex: h.sex, breed: h.breed,
       genotype: h.genotype, potential: Object.assign({}, h.potential),
+      exterieur: Object.assign({}, exterieurOf(h)),
+      interieur: Object.assign({}, interieurOf(h)),
       conformation: h.conformation, temperament: h.temperament,
       quality: h.quality, ancestors: Object.assign({}, h.ancestors || {}),
     };
   }
 
-  // --- Deterministische Erwartungswerte einer Anpaarung (für die Vorschau
-  //     im Zuchtplaner). KEINE Zufallsstreuung - das ist der Mittelwert,
-  //     um den das echte Fohlen dann streut.
+  // Ein Einzelwert-Forecast: Ø Eltern -> Erwartung -> Streubereich.
+  function traitForecast(sv, dv, opts) {
+    const pm = (sv + dv) / 2;
+    let e = pm * (1 - opts.k) + opts.pull * opts.k - opts.coi + opts.mix;
+    e = clamp(round(e), opts.lo, opts.hi);
+    return {
+      sire: round(sv), dam: round(dv), parentMean: round(pm), expect: e,
+      min: clamp(round(e - 2 * opts.spread), opts.lo, opts.hi),
+      max: clamp(round(e + 2 * opts.spread), opts.lo, opts.hi),
+    };
+  }
+
+  // --- Deterministische Erwartungswerte einer Anpaarung (ohne Zufall).
   function foalStatForecast(sire, dam) {
     const coi = inbreedingCoefficient(sire, dam);
     const mix = sire.breed !== dam.breed;
@@ -174,39 +208,83 @@ const Model = (function () {
 
     const begabungen = {};
     DISC.forEach((d) => {
-      const pm = (sire.potential[d] + dam.potential[d]) / 2;
-      let e = pm * (1 - INH.begabungRegression) + 50 * INH.begabungRegression;
-      e -= coi * INH.begabungCoi;
-      if (mix) e -= INH.begabungMix;
-      e = clamp(round(e), 3, 100);
-      begabungen[d] = {
-        parentMean: round(pm),
-        expect: e,
-        min: clamp(round(e - 2 * INH.begabungSpread), 3, 100),
-        max: clamp(round(e + 2 * INH.begabungSpread), 3, 100),
-      };
+      begabungen[d] = traitForecast(sire.potential[d], dam.potential[d], {
+        k: INH.begabungRegression, pull: 50,
+        coi: coi * INH.begabungCoi, mix: mix ? -INH.begabungMix : 0,
+        spread: INH.begabungSpread, lo: 3, hi: 100,
+      });
     });
 
-    const cm = (sire.conformation + dam.conformation) / 2;
-    let ce = cm * (1 - INH.exterieurTypePull) + bdef.conf * INH.exterieurTypePull;
-    ce -= coi * INH.exterieurCoi;
-    if (mix) ce -= INH.exterieurMix;
-    ce = clamp(round(ce), 10, 100);
+    const sEx = exterieurOf(sire), dEx = exterieurOf(dam);
+    const exterieurTraits = {};
+    EXTERIEUR_TRAITS.forEach((t) => {
+      exterieurTraits[t] = traitForecast(sEx[t], dEx[t], {
+        k: INH.exterieurTypePull, pull: bdef.conf,
+        coi: coi * INH.exterieurCoi, mix: mix ? -INH.exterieurMix : 0,
+        spread: INH.exterieurTraitSpread, lo: 10, hi: 100,
+      });
+    });
 
-    const tm = (sire.temperament + dam.temperament) / 2;
-    const te = clamp(round(tm - coi * INH.interieurCoi), 10, 99);
+    const sIn = interieurOf(sire), dIn = interieurOf(dam);
+    const interieurTraits = {};
+    INTERIEUR_TRAITS.forEach((t) => {
+      interieurTraits[t] = traitForecast(sIn[t], dIn[t], {
+        k: INH.interieurRegression, pull: 55,
+        coi: coi * INH.interieurCoi, mix: 0,
+        spread: INH.interieurTraitSpread, lo: 10, hi: 99,
+      });
+    });
+
+    const aggr = (traits, keys, spread, lo, hi) => {
+      const expect = round(keys.reduce((s, k) => s + traits[k].expect, 0) / keys.length);
+      const pmean = round(keys.reduce((s, k) => s + traits[k].parentMean, 0) / keys.length);
+      const band = 2 * spread / Math.sqrt(keys.length);
+      return { parentMean: pmean, expect: expect, min: clamp(round(expect - band), lo, hi), max: clamp(round(expect + band), lo, hi) };
+    };
 
     const ge = clamp(round(INH.gesundheitBase - coi * INH.gesundheitCoi - (mix ? INH.gesundheitMix : 0)), 20, 100);
 
     return {
-      coi: coi,
-      mix: mix,
-      foalBreed: foalBreed,
+      coi: coi, mix: mix, foalBreed: foalBreed,
       begabungen: begabungen,
-      exterieur: { parentMean: round(cm), expect: ce, min: clamp(ce - 2 * INH.exterieurSpread, 10, 100), max: clamp(ce + 2 * INH.exterieurSpread, 10, 100) },
-      interieur: { parentMean: round(tm), expect: te, min: clamp(te - 2 * INH.interieurSpread, 10, 99), max: clamp(te + 2 * INH.interieurSpread, 10, 99) },
-      gesundheit: { expect: ge, min: clamp(ge - 2 * INH.gesundheitSpread, 20, 100), max: 100 },
+      exterieurTraits: exterieurTraits,
+      interieurTraits: interieurTraits,
+      exterieur: aggr(exterieurTraits, EXTERIEUR_TRAITS, INH.exterieurTraitSpread, 10, 100),
+      interieur: aggr(interieurTraits, INTERIEUR_TRAITS, INH.interieurTraitSpread, 10, 99),
+      gesundheit: { parentMean: null, expect: ge, min: clamp(ge - 2 * INH.gesundheitSpread, 20, 100), max: 100 },
     };
+  }
+
+  // --- Wie gut ergänzt der Hengst die Stute? Bewertet die Schwächen der
+  //     Stute (Einzelnoten < 70) und wie stark sie das erwartete Fohlen hebt.
+  function matingMatch(sire, dam) {
+    const fc = foalStatForecast(sire, dam);
+    const dEx = exterieurOf(dam), dIn = interieurOf(dam);
+    const improves = [], keepsHigh = [], worsens = [];
+    let weakGain = 0, weakCount = 0, strongDrop = 0, strongCount = 0;
+
+    EXTERIEUR_TRAITS.forEach((t) => {
+      const dv = dEx[t], fe = fc.exterieurTraits[t].expect;
+      if (dv < 70) { weakCount++; weakGain += (fe - dv); if (fe - dv >= 3) improves.push({ group: 'Exterieur', trait: t, from: dv, to: fe }); }
+      else { strongCount++; strongDrop += Math.min(0, fe - dv); if (fe >= dv - 2) keepsHigh.push({ group: 'Exterieur', trait: t, to: fe }); }
+      if (fe < dv - 5) worsens.push({ group: 'Exterieur', trait: t, from: dv, to: fe });
+    });
+    INTERIEUR_TRAITS.forEach((t) => {
+      const dv = dIn[t], fe = fc.interieurTraits[t].expect;
+      if (dv < 70) { weakCount++; weakGain += (fe - dv); if (fe - dv >= 3) improves.push({ group: 'Interieur', trait: t, from: dv, to: fe }); }
+      else { strongCount++; strongDrop += Math.min(0, fe - dv); if (fe >= dv - 2) keepsHigh.push({ group: 'Interieur', trait: t, to: fe }); }
+      if (fe < dv - 5) worsens.push({ group: 'Interieur', trait: t, from: dv, to: fe });
+    });
+
+    let score = 50;
+    if (weakCount) score += (weakGain / weakCount) * 2.2;          // Schwächen ausgleichen zählt am meisten
+    if (strongCount) score += (strongDrop / strongCount) * 1.4;    // Stärken nicht verlieren
+    score += (fc.exterieur.expect - dam.conformation) * 0.5;
+    score -= fc.coi * 100 * 0.6;
+    score -= fc.mix ? 12 : 0;
+    score = clamp(round(score), 0, 100);
+
+    return { score: score, improves: improves, worsens: worsens, keepsHigh: keepsHigh, coi: fc.coi, mix: fc.mix, forecast: fc };
   }
 
   // --- Fohlen aus zwei Elternpferden (bzw. Eltern-Steckbriefen).
@@ -224,8 +302,14 @@ const Model = (function () {
     DISC.forEach((d) => {
       potential[d] = clamp(round(fc.begabungen[d].expect + gauss(0, INH.begabungSpread)), 3, 100);
     });
-    const conformation = clamp(round(fc.exterieur.expect + gauss(0, INH.exterieurSpread)), 12, 100);
-    const temperament = clamp(round(fc.interieur.expect + gauss(0, INH.interieurSpread)), 10, 99);
+    const exterieur = {};
+    EXTERIEUR_TRAITS.forEach((t) => {
+      exterieur[t] = clamp(round(fc.exterieurTraits[t].expect + gauss(0, INH.exterieurTraitSpread)), 8, 100);
+    });
+    const interieur = {};
+    INTERIEUR_TRAITS.forEach((t) => {
+      interieur[t] = clamp(round(fc.interieurTraits[t].expect + gauss(0, INH.interieurTraitSpread)), 8, 99);
+    });
     const health = clamp(round(fc.gesundheit.expect + gauss(0, INH.gesundheitSpread)), 15, 100);
 
     const foal = {
@@ -238,8 +322,10 @@ const Model = (function () {
       genotype: gt,
       potential: potential,
       skill: emptySkill(),
-      conformation: conformation,
-      temperament: temperament,
+      exterieur: exterieur,
+      interieur: interieur,
+      conformation: clamp(round(mean(exterieur, EXTERIEUR_TRAITS)), 8, 100),
+      temperament: clamp(round(mean(interieur, INTERIEUR_TRAITS)), 8, 99),
       health: health,
       energy: 100,
       quality: clamp((sire.quality + dam.quality) / 2 + gauss(0, 0.06) - coi * 0.3 - (fc.mix ? 0.08 : 0), 0.02, 0.99),
@@ -271,8 +357,6 @@ const Model = (function () {
     return out;
   }
 
-  // Näherung des Inzuchtkoeffizienten aus den Vorfahren-Karten beider
-  // Eltern: gemeinsame Ahnen mit Distanzen n1, n2 tragen (1/2)^(n1+n2+1) bei.
   function inbreedingCoefficient(sire, dam) {
     const a = sire.ancestors || {};
     const b = dam.ancestors || {};
@@ -288,7 +372,6 @@ const Model = (function () {
     return clamp(f, 0, 0.75);
   }
 
-  // --- Marktwert / Bewertung in Euro.
   function valuation(horse, currentWeek, prestigeMult) {
     const y = ageYears(horse, currentWeek);
     const af = ageFactor(y);
@@ -315,10 +398,8 @@ const Model = (function () {
     else v *= clamp(1 - (y - 12) * 0.09, 0.25, 1);
 
     v *= (bdef.value || 1);
-    // Mixe verlieren deutlich an Wert (kein Zuchtbuch, kein Typ).
     if (horse.isMix || isMixBreed(horse.breed)) v *= 0.5;
     v *= (prestigeMult || 1);
-
     if (horse.pregnancy) v *= 1.12;
 
     return Math.max(300, Math.round(v / 50) * 50);
@@ -336,6 +417,8 @@ const Model = (function () {
     MATURITY_YEARS: MATURITY_YEARS,
     MAX_BREED_AGE: MAX_BREED_AGE,
     DISC: DISC,
+    EXTERIEUR_TRAITS: EXTERIEUR_TRAITS,
+    INTERIEUR_TRAITS: INTERIEUR_TRAITS,
     INH: INH,
     clamp: clamp, gauss: gauss, randInt: randInt,
     nextId: nextId,
@@ -344,9 +427,12 @@ const Model = (function () {
     ageFactor: ageFactor,
     isMixBreed: isMixBreed,
     breedDef: breedDef,
+    exterieurOf: exterieurOf,
+    interieurOf: interieurOf,
     generateHorse: generateHorse,
     parentSnapshot: parentSnapshot,
     foalStatForecast: foalStatForecast,
+    matingMatch: matingMatch,
     breed: breed,
     inbreedingCoefficient: inbreedingCoefficient,
     valuation: valuation,

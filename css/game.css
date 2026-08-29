@@ -153,6 +153,19 @@ tr.selected td { background: rgba(var(--accent-rgb), .12); }
 
 .geno-tokens { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; word-break: break-word; background: var(--surface-2); padding: .4rem .5rem; border-radius: var(--radius); }
 
+/* Vergleichs-Zellen in der Anpaarungs-Vorschau (hebt/senkt die Stute) */
+td.cmp-good { background: rgba(var(--accent-rgb), .16); color: var(--good); font-weight: 700; }
+td.cmp-bad { background: rgba(200, 65, 73, .16); color: var(--danger); font-weight: 700; }
+
+/* Aufklappbare Einzelnoten (Exterieur / Interieur) */
+details { border: 1px solid var(--border); border-radius: var(--radius); padding: .3rem .55rem; background: var(--surface-2); }
+details > summary { cursor: pointer; font-weight: 600; }
+details.subtraits > summary { display: grid; grid-template-columns: 7.5rem 1fr; gap: .5rem; align-items: center; }
+details.subtraits > summary > span { font-size: .82rem; }
+details[open] { padding-bottom: .5rem; }
+details table { margin-top: .4rem; background: var(--surface); }
+details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
+
 /* --- Ereignis-Log --- */
 .log { max-height: 340px; overflow-y: auto; font-size: .84rem; }
 .log .entry { padding: .3rem .1rem; border-bottom: 1px dashed var(--border); }

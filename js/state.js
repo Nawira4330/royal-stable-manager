@@ -193,6 +193,7 @@ const Game = (function () {
     const coi = Model.inbreedingCoefficient(sire, dam);
     const forecast = Genetics.foalColorForecast(sire.genotype, dam.genotype);
     const statForecast = Model.foalStatForecast(sire, dam);
+    const match = Model.matingMatch(sire, dam);
     const fee = sr.fee;
     // Empfängnis-Wahrscheinlichkeit.
     const vet = Economy.facLevel(state, 'vet');
@@ -204,7 +205,7 @@ const Game = (function () {
 
     return {
       sire: sire, dam: dam, external: sr.external, coi: coi,
-      forecast: forecast, statForecast: statForecast,
+      forecast: forecast, statForecast: statForecast, match: match,
       fee: fee, conceiveChance: chance,
     };
   }
