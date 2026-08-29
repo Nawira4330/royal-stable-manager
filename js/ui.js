@@ -91,7 +91,8 @@ const UI = (function () {
     $('#tabs').hidden = false;
     $('#tb-stud').textContent = s.studName;
     $('#tb-week').textContent = s.week;
-    $('#tb-year').textContent = '(' + (s.week / Model.WEEKS_PER_YEAR).toFixed(1) + ' Spieljahre)';
+    const sea = Economy.season(s.week);
+    $('#tb-year').textContent = sea.icon + ' ' + sea.name + ' · Saison ' + (s.seasonYear || 1);
     $('#tb-cash').textContent = fmt(s.cash);
     $('#tb-cash-wrap').classList.toggle('cash-neg', s.cash < 0);
     $('#tb-prestige').textContent = Math.round(s.prestige);
@@ -183,6 +184,10 @@ const UI = (function () {
         ${bankCard(s)}
         ${statsCard(s)}
       </div>
+      <div class="grid cols-2" style="margin-top:1rem">
+        ${staffCard(s)}
+        ${sponsorCard(s)}
+      </div>
 
       <div class="card" style="margin-top:1rem">
         <h3>🥕 Futter &amp; Pflege</h3>
@@ -192,8 +197,8 @@ const UI = (function () {
           ${feedCareBlock('care', 'Pflege / Stallmanagement', Economy.CARE, s.careLevel != null ? s.careLevel : 1)}
         </div>
         <div class="row between small" style="margin-top:.6rem">
-          <span>Kosten je Pferd/Woche</span>
-          <b>${fmt(Economy.feedDef(s).cost + Economy.careDef(s).cost)} × ${s.horses.length} Pferde = ${fmt((Economy.feedDef(s).cost + Economy.careDef(s).cost) * s.horses.length)}/Wo.</b>
+          <span>Kosten je Pferd/Woche${Economy.season(s.week).idx === 3 ? ' <span class="tag warn">Winter +25 % Futter</span>' : ''}${(s.staff || []).some((x) => x.role === 'stallmeister') ? ' <span class="tag good">Stallmeister −20 % Pflege</span>' : ''}</span>
+          <b>${fmt(Math.round(Economy.feedDef(s).cost * (Economy.season(s.week).idx === 3 ? 1.25 : 1) + Economy.careDef(s).cost * ((s.staff || []).some((x) => x.role === 'stallmeister') ? 0.8 : 1)))} × ${s.horses.length} Pferde</b>
         </div>
       </div>
 
@@ -289,6 +294,39 @@ const UI = (function () {
       <div class="row between"><span>Bester Einzelverkauf</span><b>${bs ? esc(bs.name) + ' — ' + fmt(bs.amount) : '—'}</b></div>
       <div class="row between"><span>Größter Turniertag</span><b>${fmt(s.stats.biggestWin || 0)}</b></div>
       <div class="row between"><span>Bestandswert</span><b>${fmt(s.horses.reduce((a, x) => a + Game.valuation(x), 0))}</b></div>
+    </div>`;
+  }
+
+  function staffCard(s) {
+    const mine = (s.staff || []).map((x) =>
+      '<div class="row between"><span>' + (x.role === 'bereiter' ? '🏇 Bereiter/in ' : '🧹 Stallmeister/in ') + esc(x.name) +
+      ' <span class="muted small">(Können ' + x.skill + (x.role === 'bereiter' ? ', ' + esc(x.disciplines.join(', ')) : ', −20 % Pflege/Zwischenfälle') + ', ' + fmt(x.salary) + '/Wo.)</span></span>' +
+      '<button class="small danger" data-action="fire-staff" data-id="' + x.id + '">entlassen</button></div>').join('') || '<p class="small muted">Noch kein Personal.</p>';
+    const cands = (s.staffMarket || []).map((x, i) =>
+      '<div class="row between"><span>' + (x.role === 'bereiter' ? '🏇 Bereiter/in — ' + esc(x.disciplines.join(', ')) : '🧹 Stallmeister/in') +
+      ' · Können ' + x.skill + ' · ' + fmt(x.salary) + '/Wo. <span class="muted small">' + esc(x.name) + '</span></span>' +
+      '<button class="small" data-action="hire-staff" data-idx="' + i + '">einstellen (' + fmt(x.salary * 2) + ')</button></div>').join('');
+    return `<div class="card stack">
+      <h3>🧑‍🌾 Personal <span class="muted small">(${(s.staff || []).length}/${Economy.maxStaff(s)})</span></h3>
+      ${mine}
+      <div class="small muted" style="margin-top:.3rem">Verfügbar (wechselt alle 8 Wochen):</div>
+      ${cands}
+    </div>`;
+  }
+
+  function sponsorCard(s) {
+    const active = (s.sponsors || []).map((c) =>
+      '<div class="row between"><span>💼 ' + esc(c.name) + ' · +' + fmt(c.weeklyPay) + '/Wo. · noch ' + c.weeksLeft + ' Wo. · Starts ' +
+      (c.starts || 0) + '/' + c.reqStarts + ' <span class="muted small">Bonus bei Erfüllung ' + fmt(c.bonus) + '</span></span>' +
+      '<button class="small secondary" data-action="drop-sponsor" data-id="' + c.id + '">beenden</button></div>').join('') || '<p class="small muted">Kein aktiver Vertrag.</p>';
+    const offers = (s.sponsorOffers || []).map((o, i) =>
+      '<div class="row between"><span>💼 ' + esc(o.name) + ' · +' + fmt(o.weeklyPay) + '/Wo. · ' + o.weeks + ' Wo. · Auflage ' + o.reqStarts +
+      ' Turnierstarts · Bonus ' + fmt(o.bonus) + '</span>' +
+      '<button class="small" data-action="sign-sponsor" data-idx="' + i + '">unterschreiben</button></div>').join('');
+    return `<div class="card stack">
+      <h3>💼 Sponsoren <span class="muted small">(${(s.sponsors || []).length}/2)</span></h3>
+      ${active}
+      ${offers ? '<div class="small muted" style="margin-top:.3rem">Angebote:</div>' + offers : (s.prestige < 60 ? '<p class="small muted">Sponsoren melden sich ab etwas Prestige.</p>' : '')}
     </div>`;
   }
 
@@ -691,7 +729,7 @@ const UI = (function () {
           ${(!fc.mix && Model.approvalRank(plan.sire.zuchtzulassung) < 2) ? '<p class="small tag warn">' + esc(plan.sire.name) + ' ist nicht gekört → das Fohlen bekommt <b>keinen Zuchtbucheintrag</b> (−38 % Wert, kein Start bei Zuchtschau/Körung). Erst zur Körung schicken.</p>' : ''}
           <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
           ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — spürbare Abzüge bei Gesundheit, Begabungen und Fruchtbarkeit.</p>' : ''}
-          <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b></div>
+          <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b> <span class="muted small">${plan.season.icon} ${plan.season.name}${plan.seasonFert >= 1.2 ? ' (Decksaison +)' : plan.seasonFert <= 0.8 ? ' (außerhalb der Saison −)' : ''}</span></div>
           <div class="row between"><span>Deckgebühr${plan.external ? ' (Deckstation)' : ''}</span><b>${fmt(plan.fee)}</b></div>
 
           <p style="margin:.6rem 0 .2rem"><b>Begabungen</b> <span class="muted small">(grün = hebt die Stute, rot = senkt sie)</span></p>
@@ -1102,6 +1140,13 @@ const UI = (function () {
       return;
     }
     if (a === 'cmp-clear') { compareIds = []; render(); return; }
+    if (a === 'hire-staff') { const r = Game.hireStaff(parseInt(el.dataset.idx, 10)); toast(r.ok ? 'Eingestellt.' : r.msg, !r.ok); return; }
+    if (a === 'fire-staff') { Game.fireStaff(el.dataset.id); return; }
+    if (a === 'sign-sponsor') { const r = Game.signSponsor(parseInt(el.dataset.idx, 10)); toast(r.ok ? 'Vertrag unterschrieben.' : r.msg, !r.ok); return; }
+    if (a === 'drop-sponsor') {
+      if (confirm('Sponsorenvertrag vorzeitig beenden? (kein Bonus, kleiner Prestige-Verlust)')) Game.dropSponsor(el.dataset.id);
+      return;
+    }
     if (a === 'take-loan') {
       const v = parseInt(($('#loan-amount') || {}).value, 10);
       const r = Game.takeLoan(v || 0);

@@ -38,7 +38,10 @@ auf dem Startbildschirm alle Regeln.
   Trainingsanlage, Tierarzt/Reproduktion, Vermarktung), **Futter & Pflege**
   (je 3 Stufen: mehr Kosten je Pferd/Woche, dafür mehr Energie/Training/
   Fruchtbarkeit bzw. weniger Krankheiten, Turnier-Bonus, langsamerer
-  Altersverschleiß), Chronik.
+  Altersverschleiß), **Personal** (Bereiter mit Spezialdisziplinen → mehr
+  Trainingszuwachs; Stallmeister → weniger Pflegekosten und Krankheits-
+  ereignisse), **Sponsoren** (ab Prestige 60: Wochenzahlung gegen
+  Startauflage + Abschlussbonus), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
   vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
   Gesundheit (5 Einzelnoten: Fundament & Sehnen, Atemwege, Herz-Kreislauf,
@@ -48,7 +51,11 @@ auf dem Startbildschirm alle Regeln.
   **Suchwerkzeug**: du setzt die Kriterien (Rasse, Mindest-Exterieur/-Interieur/
   -Gesundheit, Mindest-Begabung, max. Deckgeld) und Sortierung – das Spiel
   filtert nur danach und empfiehlt nichts. Die Vorschau zeigt je Einzelnote
-  Hengst/Stute/Erwartung, COI, Farb- und Gesundheitsprognose.
+  Hengst/Stute/Erwartung, COI, Farb- und Gesundheitsprognose. Die
+  **Empfängnischance** hängt zusätzlich an der **Decksaison** (Frühling +,
+  Winter −). Bei der Geburt drohen je nach Alter, Gesundheit und COI der Stute
+  **Verfohlen, Schwergeburt** (Tierarztrechnung, schwächeres Fohlen) oder – sehr
+  selten – der Verlust der Stute; die Tierarzt-Anlage senkt das Risiko stark.
 - **🏆 Schauen** – je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen)
   mit Mindestanforderung, Jungpferde-Prüfungen, Nenn-/Reisekosten,
   Energieverbrauch. Dazu **Zuchtschauen** und **Körungen/Prämierungen**
@@ -88,10 +95,14 @@ Detailansicht), **Pferde-Vergleich** (⚖ an zwei Pferden), **Sammel-Trainingspl
 (ausgelassen → Hufe/Immunsystem sinken) und ein **Statistik-Dashboard**
 (Kassenverlauf, bester Verkauf, größter Turniertag).
 
+Ein Spieljahr = 52 Wochen in **vier Jahreszeiten** zu je 13 Wochen (Anzeige in
+der Kopfzeile). Sie beeinflussen Empfängnischance (Frühling = Decksaison),
+Turnierdichte, Trainingszuwachs, Energie und Futterkosten (Winter +25 %).
+
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
 noch offen ist. Mit **„Woche weiter"** vergeht Zeit: Nachfrage driftet, Pferde
 altern und arbeiten ihren Trainingsplan ab, Fohlen werden geboren, Turniere
-und Auktionen laufen, Unterhalt wird fällig.
+und Auktionen laufen, Sponsoren zahlen, Unterhalt wird fällig.
 
 ## Wie die Werte vererbt werden
 

@@ -83,9 +83,28 @@ const Economy = (function () {
   function weeklyUpkeep(state) {
     let u = 0;
     Object.keys(FACILITIES).forEach((k) => { u += facLevel(state, k).upkeep; });
-    u += state.horses.length * (feedDef(state).cost + careDef(state).cost);
-    return u;
+    const stallmeister = (state.staff || []).some((x) => x.role === 'stallmeister');
+    const careMult = stallmeister ? 0.8 : 1;
+    u += state.horses.length * (feedDef(state).cost * seasonFeedMult(state.week) + careDef(state).cost * careMult);
+    (state.staff || []).forEach((x) => { u += x.salary; });
+    return Math.round(u);
   }
+
+  // --- Jahreszeiten (13 Wochen je Saison). Frühling = Decksaison.
+  const SEASONS = [
+    { name: 'Frühling', icon: '🌱' },
+    { name: 'Sommer', icon: '☀️' },
+    { name: 'Herbst', icon: '🍂' },
+    { name: 'Winter', icon: '❄️' },
+  ];
+  function season(week) {
+    const idx = Math.floor(((week % 52) + 52) % 52 / 13);
+    return { idx: idx, name: SEASONS[idx].name, icon: SEASONS[idx].icon };
+  }
+  function seasonFertMult(week) { return [1.35, 1.0, 0.95, 0.7][season(week).idx]; }
+  function seasonFeedMult(week) { return season(week).idx === 3 ? 1.25 : 1.0; }   // Winter: kein Weidegang
+  function seasonTrainMult(week) { return season(week).idx === 3 ? 0.92 : (season(week).idx === 1 ? 1.03 : 1.0); }
+  function seasonEnergyBonus(week) { return [1, 2, 0, -2][season(week).idx]; }
 
   // --- Bank: Kredithöchstgrenze abhängig von Rang und Anlagenwert.
   const LOAN_RATE = 0.011;   // Zins pro Woche auf die Restschuld
@@ -201,6 +220,64 @@ const Economy = (function () {
       list.push({ horse: h, price: ask, demand: dm });
     }
     return list;
+  }
+
+  // --- Personal: Bereiter (heben die Trainingswirkung in ihren Disziplinen)
+  //     und Stallmeister (senkt Pflege-/Routinekosten, weniger Zwischenfälle).
+  const STAFF_FIRST = ['Anna', 'Lena', 'Marie', 'Julia', 'Sophie', 'Nele', 'Paul', 'Jan', 'Tom', 'Ben', 'Finn', 'Lars'];
+  const STAFF_LAST = ['Berger', 'Krause', 'Wolf', 'Frank', 'Böhm', 'Sander', 'Reuter', 'Hahn', 'Vogt', 'Kern'];
+  function rollStaffMarket(state) {
+    const tier = prestigeTier(state).stars;
+    const n = 3 + Model.randInt(0, 1);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const role = i === 0 && Math.random() < 0.35 ? 'stallmeister' : 'bereiter';
+      const skill = clamp(Math.round(Model.gauss(45 + tier * 8, 16)), 15, 96);
+      const name = STAFF_FIRST[Model.randInt(0, STAFF_FIRST.length - 1)] + ' ' + STAFF_LAST[Model.randInt(0, STAFF_LAST.length - 1)];
+      let discs = [];
+      if (role === 'bereiter') {
+        const pool = DISC.slice().sort(() => Math.random() - 0.5);
+        discs = pool.slice(0, 2);
+      }
+      const salary = role === 'stallmeister'
+        ? 300 + Math.round(skill * 6)
+        : 220 + Math.round(skill * 7);
+      out.push({ id: 's' + Math.random().toString(36).slice(2, 7), name: name, role: role, disciplines: discs, skill: skill, salary: salary });
+    }
+    return out;
+  }
+  function maxStaff(state) { return 2 + (state.facilities.arena || 0); }
+  // Trainings-Multiplikator-Bonus durch Bereiter für eine Disziplin.
+  function staffTrainBonus(state, disc) {
+    let best = 0;
+    (state.staff || []).forEach((x) => {
+      if (x.role === 'bereiter' && x.disciplines.indexOf(disc) !== -1) best = Math.max(best, x.skill);
+    });
+    return 1 + best / 220;   // bis ~ +0.44
+  }
+  function staffEventMult(state) {
+    return (state.staff || []).some((x) => x.role === 'stallmeister') ? 0.8 : 1;
+  }
+
+  // --- Sponsoren: ab etwas Prestige tauchen Vertragsangebote auf. Wöchentliche
+  //     Zahlung + Bonus am Ende, wenn die Startauflage erfüllt wurde.
+  const SPONSORS = ['EquiFeed', 'Reitsport Hansen', 'Nordland Versicherung', 'GreenPaddock', 'Sattlerei Vogt', 'HorseCare24', 'Weidezaun-Profi'];
+  function rollSponsorOffers(state) {
+    if (state.prestige < 60) return [];
+    const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const weeks = [20, 26, 39, 52][Model.randInt(0, 3)];
+      const weeklyPay = Math.round((250 + state.prestige * 1.4 + Model.gauss(0, 120)) / 10) * 10;
+      const reqStarts = Math.max(2, Math.round(weeks / 3));
+      const bonus = Math.round(weeklyPay * weeks * 0.35 / 100) * 100;
+      out.push({
+        id: 'sp' + Math.random().toString(36).slice(2, 7),
+        name: SPONSORS[Model.randInt(0, SPONSORS.length - 1)],
+        weeklyPay: Math.max(120, weeklyPay), weeks: weeks, reqStarts: reqStarts, bonus: bonus,
+      });
+    }
+    return out;
   }
 
   // --- Deckstation: fremde Hengste, die gegen Deckgebühr zur Verfügung
@@ -336,7 +413,9 @@ const Economy = (function () {
   function rollShows(state) {
     const tier = prestigeTier(state).stars;
     const shows = [];
-    const nSport = 3 + Model.randInt(0, 2);
+    const si = season(state.week).idx;
+    // Winter weniger Sport, Sommer mehr.
+    const nSport = si === 3 ? (2 + Model.randInt(0, 1)) : si === 1 ? (4 + Model.randInt(0, 2)) : (3 + Model.randInt(0, 2));
     for (let i = 0; i < nSport; i++) {
       const disc = DISC[Model.randInt(0, DISC.length - 1)];
       const level = clamp(Model.randInt(1, tier + 1), 1, 5);
@@ -691,6 +770,15 @@ const Economy = (function () {
     LOAN_RATE: LOAN_RATE,
     FARRIER_EVERY: FARRIER_EVERY, FARRIER_COST: FARRIER_COST,
     VETROUTINE_EVERY: VETROUTINE_EVERY, VETROUTINE_COST: VETROUTINE_COST,
+    season: season,
+    seasonFertMult: seasonFertMult,
+    seasonTrainMult: seasonTrainMult,
+    seasonEnergyBonus: seasonEnergyBonus,
+    rollStaffMarket: rollStaffMarket,
+    maxStaff: maxStaff,
+    staffTrainBonus: staffTrainBonus,
+    staffEventMult: staffEventMult,
+    rollSponsorOffers: rollSponsorOffers,
     initDemand: initDemand,
     driftDemand: driftDemand,
     demandMultiplier: demandMultiplier,

@@ -52,6 +52,13 @@ const Game = (function () {
       nextVetRoutineWeek: Economy.VETROUTINE_EVERY,
       debt: 0,
       history: [],
+      staff: [],
+      staffMarket: [],
+      nextStaffWeek: 0,
+      sponsors: [],
+      sponsorOffers: [],
+      nextSponsorWeek: 8,
+      lastSeasonIdx: -1,
       rivals: [],
       seasonYear: 1,
       championHistory: [],
@@ -66,6 +73,7 @@ const Game = (function () {
     }
 
     state.rivals = Economy.initRivals(state);
+    state.staffMarket = Economy.rollStaffMarket(state);
     state.market = Economy.rollMarket(state);
     state.studRoster = Economy.rollStudRoster(state);
     state.shows = Economy.rollShows(state);
@@ -94,6 +102,13 @@ const Game = (function () {
     if (state.nextFarrierWeek == null) state.nextFarrierWeek = state.week + 2;
     if (state.nextVetRoutineWeek == null) state.nextVetRoutineWeek = state.week + 4;
     if (!Array.isArray(state.history)) state.history = [];
+    if (!Array.isArray(state.staff)) state.staff = [];
+    if (!Array.isArray(state.staffMarket)) state.staffMarket = Economy.rollStaffMarket(state);
+    if (state.nextStaffWeek == null) state.nextStaffWeek = state.week + 4;
+    if (!Array.isArray(state.sponsors)) state.sponsors = [];
+    if (!Array.isArray(state.sponsorOffers)) state.sponsorOffers = [];
+    if (state.nextSponsorWeek == null) state.nextSponsorWeek = state.week + 4;
+    if (state.lastSeasonIdx == null) state.lastSeasonIdx = Economy.season(state.week).idx;
     if (!state.stats) state.stats = {};
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
     if (state.stats.biggestWin === undefined) state.stats.biggestWin = 0;
@@ -192,6 +207,47 @@ const Game = (function () {
     log('Kredit getilgt: -' + Economy.fmtEur(amount) + ' (Restschuld ' + Economy.fmtEur(state.debt) + ').', 'good');
     save(); emit();
     return { ok: true, amount: amount };
+  }
+
+  // --- Personal ------------------------------------------------------
+  function hireStaff(idx) {
+    const cand = (state.staffMarket || [])[idx];
+    if (!cand) return { ok: false, msg: 'Angebot nicht mehr da.' };
+    if ((state.staff || []).length >= Economy.maxStaff(state)) return { ok: false, msg: 'Kein Platz für weiteres Personal (max. ' + Economy.maxStaff(state) + ', Trainingsanlage ausbauen).' };
+    const signOn = cand.salary * 2;
+    if (state.cash < signOn) return { ok: false, msg: 'Antrittsgeld ' + Economy.fmtEur(signOn) + ' nicht bezahlbar.' };
+    state.cash -= signOn;
+    state.staff.push(cand);
+    state.staffMarket.splice(idx, 1);
+    log('Eingestellt: ' + cand.name + ' (' + (cand.role === 'bereiter' ? 'Bereiter/in — ' + cand.disciplines.join(', ') : 'Stallmeister/in') + ', Gehalt ' + Economy.fmtEur(cand.salary) + '/Wo., Antrittsgeld -' + Economy.fmtEur(signOn) + ').', 'cost');
+    save(); emit();
+    return { ok: true };
+  }
+  function fireStaff(id) {
+    const x = (state.staff || []).find((s) => s.id === id);
+    state.staff = (state.staff || []).filter((s) => s.id !== id);
+    if (x) log(x.name + ' wurde entlassen.', 'info');
+    save(); emit();
+    return { ok: true };
+  }
+
+  // --- Sponsoren ---------------------------------------------------
+  function signSponsor(idx) {
+    const off = (state.sponsorOffers || [])[idx];
+    if (!off) return { ok: false, msg: 'Angebot nicht mehr da.' };
+    if ((state.sponsors || []).length >= 2) return { ok: false, msg: 'Maximal 2 Sponsorenverträge gleichzeitig.' };
+    state.sponsors.push({ id: off.id, name: off.name, weeklyPay: off.weeklyPay, weeksLeft: off.weeks,
+      reqStarts: off.reqStarts, bonus: off.bonus, starts: 0, startWeek: state.week });
+    state.sponsorOffers.splice(idx, 1);
+    log('Sponsorenvertrag mit ' + off.name + ' unterschrieben: +' + Economy.fmtEur(off.weeklyPay) + '/Wo. für ' + off.weeks + ' Wochen, Auflage ' + off.reqStarts + ' Turnierstarts.', 'good');
+    save(); emit();
+    return { ok: true };
+  }
+  function dropSponsor(id) {
+    state.sponsors = (state.sponsors || []).filter((c) => c.id !== id);
+    log('Sponsorenvertrag vorzeitig beendet.', 'warn');
+    save(); emit();
+    return { ok: true };
   }
 
   // Denselben Wochenplan auf mehrere Pferde übertragen.
@@ -568,7 +624,7 @@ const Game = (function () {
     const fee = sr.fee;
     // Empfängnis-Wahrscheinlichkeit.
     const vet = Economy.facLevel(state, 'vet');
-    let chance = 0.72 * vet.fert * Economy.feedDef(state).fertMult;
+    let chance = 0.72 * vet.fert * Economy.feedDef(state).fertMult * Economy.seasonFertMult(state.week);
     chance *= clamp(1 - (dy - 12) * 0.05, 0.3, 1);        // Stutenalter
     chance *= clamp(dam.health / 90, 0.5, 1.05);
     chance *= clamp(1 - coi * 0.6, 0.4, 1);               // Inzucht senkt Fruchtbarkeit
@@ -579,6 +635,7 @@ const Game = (function () {
       friend: sr.friend || null, friendEntry: friendEntry,
       forecast: forecast, statForecast: statForecast, match: match,
       fee: fee, conceiveChance: chance,
+      season: Economy.season(state.week), seasonFert: Economy.seasonFertMult(state.week),
     };
   }
 
@@ -665,6 +722,7 @@ const Game = (function () {
     if (state.cash < show.entryFee) return { ok: false, msg: 'Nenngeld nicht bezahlbar.' };
     state.cash -= show.entryFee;
     show.entered.push(horseId);
+    (state.sponsors || []).forEach((c) => { c.starts = (c.starts || 0) + 1; });
     log('Genannt: ' + h.name + ' für ' + show.name + ' (Nenngeld ' + Economy.fmtEur(show.entryFee) + ').', 'cost');
     save(); emit();
     return { ok: true };
@@ -727,12 +785,23 @@ const Game = (function () {
     const trend = Economy.driftDemand(state);
     if (trend) log('📈 ' + trend, 'info');
 
+    // 0b) Jahreszeitenwechsel.
+    const seas = Economy.season(state.week);
+    if (seas.idx !== state.lastSeasonIdx) {
+      state.lastSeasonIdx = seas.idx;
+      const note = seas.idx === 0 ? ' — Decksaison: Empfängnis deutlich wahrscheinlicher.'
+        : seas.idx === 3 ? ' — Winter: höhere Futterkosten, weniger Turniere, Empfängnis unwahrscheinlicher.'
+        : seas.idx === 1 ? ' — Sommer: Weidegang, mehr Turniere.' : '.';
+      log(seas.icon + ' ' + seas.name + ' beginnt' + note, 'info');
+    }
+    const staffEvent = Economy.staffEventMult(state);
+
     // 1) Alterung, Energie, Training, Gesundheit.
     const births = [];
     state.horses.forEach((h) => {
       const y = Model.ageYears(h, state.week);
-      // Energie (abhängig von der Fütterung)
-      h.energy = clamp(h.energy + feed.energyRegen, 0, 100);
+      // Energie (abhängig von Fütterung + Jahreszeit)
+      h.energy = clamp(h.energy + feed.energyRegen + Economy.seasonEnergyBonus(state.week), 0, 100);
       // Leichte Gesundheits-Regeneration durch gutes Futter
       if (feed.healthRegen && h.health < 100 && h.health > 25) {
         Model.adjustHealth(h, feed.healthRegen);
@@ -765,6 +834,7 @@ const Game = (function () {
           const gap = h.potential[d] - h.skill[d];
           if (gap > 0.2) {
             const rate = 0.46 * arena.mult * feed.trainMult
+              * Economy.staffTrainBonus(state, d) * Economy.seasonTrainMult(state.week)
               * clamp(gap / 40, 0.15, 1)
               * clamp(h.interieur ? (Model.interieurOf(h)['Lernwille'] + Model.interieurOf(h)['Rittigkeit']) / 140 : h.temperament / 70, 0.5, 1.2)
               * Model.ageFactor(y)
@@ -815,8 +885,31 @@ const Game = (function () {
         log('Bei ' + dam.name + ' kam ein Fohlen tot zur Welt: ' + result.reason, 'warn');
         return;
       }
+      // --- Geburtskomplikationen. Risiko steigt mit Stutenalter, niedriger
+      //     Gesundheit und COI; die Tierarzt-Anlage senkt es deutlich.
+      const dY = Model.ageYears(dam, state.week);
+      let compRisk = 0.04 + Math.max(0, dY - 14) * 0.02 + Math.max(0, (75 - dam.health)) * 0.004 + result.coi * 0.5;
+      compRisk *= [1, 0.7, 0.45][state.facilities.vet || 0];
+      const cRoll = Math.random();
+      if (cRoll < compRisk * 0.28 && dam.health < 40) {
+        // sehr selten: die Stute überlebt die Geburt nicht.
+        log('💔 ' + dam.name + ' ist bei einer schweren Geburt gestorben. Das Fohlen konnte gerettet werden.', 'warn');
+        dam._dead = true;
+        removeHorse(dam.id);
+      } else if (cRoll < compRisk * 0.5) {
+        log('💔 ' + dam.name + ' hat verfohlt (Abort). Kein lebendes Fohlen.', 'warn');
+        Model.injureHealth(dam, Model.randInt(3, 9), ['Immunsystem']);
+        return;
+      } else if (cRoll < compRisk) {
+        const bill = 500 + Model.randInt(0, 1200);
+        state.cash -= bill;
+        Model.injureHealth(dam, Model.randInt(4, 10), ['Herz-Kreislauf']);
+        result.foal._complication = Model.randInt(6, 16);
+        log('Schwergeburt bei ' + dam.name + ' — Tierarzt -' + Economy.fmtEur(bill) + ', Stute und Fohlen angeschlagen.', 'warn');
+      }
       const foal = result.foal;
-      Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth);
+      Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth - (foal._complication || 0));
+      delete foal._complication;
       foal.name = Names.randName();
       state.stats.foalsBred += 1;
       // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
@@ -923,6 +1016,35 @@ const Game = (function () {
       state.studRoster = Economy.rollStudRoster(state);
       state.nextStudWeek = state.week + 6;
     }
+    if (state.week >= (state.nextStaffWeek || 0)) {
+      state.staffMarket = Economy.rollStaffMarket(state);
+      state.nextStaffWeek = state.week + 8;
+    }
+    if (state.week >= (state.nextSponsorWeek || 0)) {
+      const offers = Economy.rollSponsorOffers(state);
+      if (offers.length) {
+        state.sponsorOffers = offers;
+        log('💼 Neue Sponsoren-Angebote (Tab Gestüt).', 'info');
+      }
+      state.nextSponsorWeek = state.week + 10;
+    }
+
+    // Sponsoren: Wochenzahlung + Vertragsende.
+    const stillActive = [];
+    (state.sponsors || []).forEach((c) => {
+      state.cash += c.weeklyPay;
+      c.weeksLeft -= 1;
+      if (c.weeksLeft > 0) { stillActive.push(c); return; }
+      if ((c.starts || 0) >= c.reqStarts) {
+        state.cash += c.bonus;
+        state.prestige += 10;
+        log('💼 Sponsorenvertrag ' + c.name + ' erfüllt: Abschlussbonus +' + Economy.fmtEur(c.bonus) + ', +10 Prestige.', 'good');
+      } else {
+        state.prestige = Math.max(0, state.prestige - 6);
+        log('💼 Sponsorenvertrag ' + c.name + ' ausgelaufen — Startauflage (' + c.starts + '/' + c.reqStarts + ') verfehlt, kein Bonus.', 'warn');
+      }
+    });
+    state.sponsors = stillActive;
 
     // Rivalen-Gestüte entwickeln sich; am Jahresende das Championat.
     Economy.advanceRivals(state);
@@ -1005,7 +1127,7 @@ const Game = (function () {
     const horses = state.horses.filter((h) => !h.pregnancy);
     // Krankheits-/Verletzungsrisiko: durch gute Pflege gesenkt, durch
     // schlechte erhöht (care.eventMult).
-    if (roll < 0.3 * care.eventMult && state.horses.length) {
+    if (roll < 0.3 * care.eventMult * Economy.staffEventMult(state) && state.horses.length) {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
       const bill = 300 + Model.randInt(0, 900);
       state.cash -= bill;
@@ -1150,6 +1272,10 @@ const Game = (function () {
     applyPlanToAll: applyPlanToAll,
     takeLoan: takeLoan,
     repayLoan: repayLoan,
+    hireStaff: hireStaff,
+    fireStaff: fireStaff,
+    signSponsor: signSponsor,
+    dropSponsor: dropSponsor,
     createOffer: createOffer,
     cancelOffer: cancelOffer,
     previewCode: previewCode,
