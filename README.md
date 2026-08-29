@@ -81,6 +81,13 @@ auf dem Startbildschirm alle Regeln.
     der Besitzer erzeugt sie über denselben Abrechnungscode neu.
   Das Spiel macht **keine Netzwerkanfragen**.
 
+Weitere Bausteine: **Stall-Filter/Sortierung**, **Stammbaum-Grafik** (🌳 in der
+Detailansicht), **Pferde-Vergleich** (⚖ an zwei Pferden), **Sammel-Trainingsplan**,
+**Vererber-Rating** (★ nach ≥ 3 Fohlen), **Bank/Kredit** (Zins pro Woche),
+**Übertraining → Sehnenreizung**, **Hufschmied- und Wurmkur-/Impf-Zyklen**
+(ausgelassen → Hufe/Immunsystem sinken) und ein **Statistik-Dashboard**
+(Kassenverlauf, bester Verkauf, größter Turniertag).
+
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
 noch offen ist. Mit **„Woche weiter"** vergeht Zeit: Nachfrage driftet, Pferde
 altern und arbeiten ihren Trainingsplan ab, Fohlen werden geboren, Turniere

@@ -117,6 +117,8 @@ const Model = (function () {
     if (h.leistungspruefung === undefined) h.leistungspruefung = null;
     if (h.pendingTest === undefined) h.pendingTest = null;
     if (h.noPapers === undefined) h.noPapers = false;
+    if (h.foalsBred === undefined) h.foalsBred = 0;
+    if (h.foalQualSum === undefined) h.foalQualSum = 0;
     return h;
   }
 
@@ -227,6 +229,8 @@ const Model = (function () {
       leistungspruefung: lp,
       pendingTest: null,
       noPapers: false,
+      foalsBred: 0,
+      foalQualSum: 0,
       bred: !!opts.bred,
       origin: opts.origin || 'generiert',
       acquiredWeek: opts.currentWeek || 0,
@@ -465,6 +469,7 @@ const Model = (function () {
       sireName: sire.name, damName: dam.name,
       ancestors: mergeAncestors(sire, dam),
       zuchtzulassung: null, praemie: null, titel: null, leistungspruefung: null, pendingTest: null,
+      foalsBred: 0, foalQualSum: 0,
       // Ohne Zuchtbucheintrag, wenn der Vater nicht (mind.) gekört/eingetragen ist.
       noPapers: fc.mix || approvalRank(sire.zuchtzulassung) < 2,
       bred: true,
@@ -503,6 +508,41 @@ const Model = (function () {
     return clamp(f, 0, 0.75);
   }
 
+  // --- Stammbaum: rekursiv über die Herde/Steckbriefe auflösen, bis Tiefe
+  //     `depth`. `lookup(id)` liefert ein Pferd oder null; unbekannte Ahnen
+  //     werden als Blatt mit Namen (oder "?") dargestellt.
+  function pedigree(h, lookup, depth) {
+    function node(ref, name, d) {
+      const horse = ref ? lookup(ref) : null;
+      if (horse) {
+        return {
+          name: horse.name, id: horse.id, breed: horse.breed,
+          zuchtzulassung: horse.zuchtzulassung || null, praemie: horse.praemie || null, titel: horse.titel || null,
+          conf: Math.round(horse.conformation), health: Math.round(horse.health),
+          sire: d > 1 ? node(horse.sireId, horse.sireName, d - 1) : null,
+          dam: d > 1 ? node(horse.damId, horse.damName, d - 1) : null,
+        };
+      }
+      if (name) return { name: name, unknown: true, sire: null, dam: null };
+      return { name: '—', empty: true, sire: null, dam: null };
+    }
+    return {
+      self: { name: h.name, id: h.id },
+      sire: node(h.sireId, h.sireName, depth),
+      dam: node(h.damId, h.damName, depth),
+    };
+  }
+
+  // --- Vererber-Rating: wie gut fallen die Fohlen dieses Pferdes aus.
+  //     Wird bei Geburten fortgeschrieben (foalsBred, foalQualSum).
+  function breederRating(h) {
+    const n = h.foalsBred || 0;
+    if (n < 3) return null;
+    const avg = (h.foalQualSum || 0) / n;
+    const stars = clamp(Math.round(avg * 5.2), 1, 5);
+    return { count: n, avg: avg, stars: stars };
+  }
+
   function valuation(horse, currentWeek, prestigeMult) {
     const y = ageYears(horse, currentWeek);
     const af = ageFactor(y);
@@ -528,6 +568,8 @@ const Model = (function () {
     v += { 'Ib-Prämie': 1500, 'Ia-Prämie': 4000, 'Staatsprämie': 9000 }[horse.praemie] || 0;
     if (horse.titel) v += 6000;
     if (horse.leistungspruefung) v += (horse.leistungspruefung.index - 40) * 30;
+    const br = breederRating(horse);
+    if (br) v += (br.stars - 2) * 2600 + br.count * 200;   // Vererber-Bonus
     if (horse.noPapers) v *= 0.62;   // Fohlen ohne Zuchtbucheintrag
 
     if (y < 1) v *= 0.6;
@@ -566,6 +608,8 @@ const Model = (function () {
     ageFactor: ageFactor,
     isMixBreed: isMixBreed,
     approvalRank: approvalRank,
+    pedigree: pedigree,
+    breederRating: breederRating,
     breedDef: breedDef,
     exterieurOf: exterieurOf,
     interieurOf: interieurOf,

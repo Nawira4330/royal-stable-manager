@@ -87,6 +87,19 @@ const Economy = (function () {
     return u;
   }
 
+  // --- Bank: Kredithöchstgrenze abhängig von Rang und Anlagenwert.
+  const LOAN_RATE = 0.011;   // Zins pro Woche auf die Restschuld
+  function maxLoan(state) {
+    const base = 20000 + state.prestige * 120;
+    const facVal = Object.keys(FACILITIES).reduce((s, k) => s + (state.facilities[k] || 0) * 15000, 0);
+    return Math.round((base + facVal) / 1000) * 1000;
+  }
+
+  // --- Routinebehandlungen: Hufschmied (alle 7 Wo.) + Wurmkur/Impfung
+  //     (alle 13 Wo.). Kosten je Pferd; ausgelassen -> Hufe/Immunsystem sinken.
+  const FARRIER_EVERY = 7, FARRIER_COST = 110;
+  const VETROUTINE_EVERY = 13, VETROUTINE_COST = 95;
+
   function prestigeMult(state) {
     // Prestige 0..1000 -> Preis-/Wert-Multiplikator ~0.9..1.6
     return 0.9 + clamp(state.prestige / 1000, 0, 1) * 0.7;
@@ -674,6 +687,10 @@ const Economy = (function () {
     weeklyUpkeep: weeklyUpkeep,
     prestigeMult: prestigeMult,
     prestigeTier: prestigeTier,
+    maxLoan: maxLoan,
+    LOAN_RATE: LOAN_RATE,
+    FARRIER_EVERY: FARRIER_EVERY, FARRIER_COST: FARRIER_COST,
+    VETROUTINE_EVERY: VETROUTINE_EVERY, VETROUTINE_COST: VETROUTINE_COST,
     initDemand: initDemand,
     driftDemand: driftDemand,
     demandMultiplier: demandMultiplier,

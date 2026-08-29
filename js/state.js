@@ -48,10 +48,14 @@ const Game = (function () {
       nextMarketWeek: 0,
       nextShowWeek: 0,
       nextStudWeek: 0,
+      nextFarrierWeek: Economy.FARRIER_EVERY,
+      nextVetRoutineWeek: Economy.VETROUTINE_EVERY,
+      debt: 0,
+      history: [],
       rivals: [],
       seasonYear: 1,
       championHistory: [],
-      stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0 },
+      stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0, bestSale: null, biggestWin: 0 },
     };
 
     // Startbestand: 1 Hengst, 3 Stuten, gemischte Rassen.
@@ -86,6 +90,13 @@ const Game = (function () {
     if (!Array.isArray(state.rivals) || !state.rivals.length) state.rivals = Economy.initRivals(state);
     if (state.seasonYear == null) state.seasonYear = 1;
     if (!Array.isArray(state.championHistory)) state.championHistory = [];
+    if (state.debt == null) state.debt = 0;
+    if (state.nextFarrierWeek == null) state.nextFarrierWeek = state.week + 2;
+    if (state.nextVetRoutineWeek == null) state.nextVetRoutineWeek = state.week + 4;
+    if (!Array.isArray(state.history)) state.history = [];
+    if (!state.stats) state.stats = {};
+    if (state.stats.bestSale === undefined) state.stats.bestSale = null;
+    if (state.stats.biggestWin === undefined) state.stats.biggestWin = 0;
     if (!state.friendCode) state.friendCode = Friend.playerCode();
     if (!Array.isArray(state.friendStuds)) state.friendStuds = [];
     if (!Array.isArray(state.pendingOffers)) state.pendingOffers = [];
@@ -153,6 +164,50 @@ const Game = (function () {
   function addCash(v, reason) {
     state.cash += v;
     if (reason) log((v >= 0 ? '+' : '') + Economy.fmtEur(v) + ' - ' + reason, v >= 0 ? 'good' : 'cost');
+  }
+  function recordSale(name, amount) {
+    if (!state.stats.bestSale || amount > state.stats.bestSale.amount) {
+      state.stats.bestSale = { name: name, amount: Math.round(amount), week: state.week };
+    }
+  }
+
+  // --- Bank -----------------------------------------------------------
+  function takeLoan(amount) {
+    amount = Math.max(0, Math.round(amount || 0));
+    const room = Economy.maxLoan(state) - (state.debt || 0);
+    if (room <= 0) return { ok: false, msg: 'Kein Kreditrahmen mehr (max. ' + Economy.fmtEur(Economy.maxLoan(state)) + ').' };
+    amount = Math.min(amount, room);
+    state.debt = (state.debt || 0) + amount;
+    state.cash += amount;
+    log('Kredit aufgenommen: +' + Economy.fmtEur(amount) + ' (Restschuld ' + Economy.fmtEur(state.debt) + ', ' + (Economy.LOAN_RATE * 100).toFixed(1) + '% Zins/Woche).', 'info');
+    save(); emit();
+    return { ok: true, amount: amount };
+  }
+  function repayLoan(amount) {
+    amount = Math.max(0, Math.round(amount || 0));
+    amount = Math.min(amount, state.debt || 0, Math.max(0, state.cash));
+    if (amount <= 0) return { ok: false, msg: 'Nichts zu tilgen (oder kein Geld).' };
+    state.debt -= amount;
+    state.cash -= amount;
+    log('Kredit getilgt: -' + Economy.fmtEur(amount) + ' (Restschuld ' + Economy.fmtEur(state.debt) + ').', 'good');
+    save(); emit();
+    return { ok: true, amount: amount };
+  }
+
+  // Denselben Wochenplan auf mehrere Pferde übertragen.
+  function applyPlanToAll(plan, onlyIds) {
+    const clean = (Array.isArray(plan) ? plan : []).slice(0, 6).map((d) => (d && DISC.indexOf(d) !== -1 ? d : null));
+    let n = 0;
+    state.horses.forEach((h) => {
+      if (h.offered) return;
+      if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return;
+      if (onlyIds && onlyIds.indexOf(h.id) === -1) return;
+      h.trainingPlan = clean.slice();
+      h.trainingFocus = clean.find((d) => d) || null;
+      n++;
+    });
+    save(); emit();
+    return { ok: true, count: n };
   }
 
   // --- Aktionen des Spielers ---------------------------------------------
@@ -367,6 +422,7 @@ const Game = (function () {
     state.cash += off.price;
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += off.price;
+    recordSale(h.name, off.price);
     Economy.applySaleImpact(state, h);
     h.offered = false;
     removeHorse(h.id);
@@ -693,9 +749,19 @@ const Game = (function () {
       const restSlots = 6 - plan.length;
       h.energy = clamp(h.energy + restSlots * 5, 0, 100);           // Ruhetage erholen extra
       if (y >= Model.MATURITY_YEARS && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
-        let skipped = 0;
+        let skipped = 0, injured = false;
         plan.forEach((d) => {
+          if (injured) return;
           if (h.energy < 25) { skipped++; return; }
+          // Übertraining: hartes Training bei niedriger Energie kann eine
+          // Sehnen-/Fundament-Verletzung auslösen.
+          if (h.energy < 38 && Math.random() < 0.05) {
+            Model.injureHealth(h, Model.randInt(5, 12), ['Fundament & Sehnen']);
+            h.energy = clamp(h.energy - 8, 0, 100);
+            injured = true;
+            log('⚠️ ' + h.name + ' hat sich bei erschöpfendem Training eine Sehnenreizung zugezogen — Trainingspause.', 'warn');
+            return;
+          }
           const gap = h.potential[d] - h.skill[d];
           if (gap > 0.2) {
             const rate = 0.46 * arena.mult * feed.trainMult
@@ -753,6 +819,9 @@ const Game = (function () {
       Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth);
       foal.name = Names.randName();
       state.stats.foalsBred += 1;
+      // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
+      const sireHerd = sire && sire.id ? getHorse(sire.id) : null;
+      [sireHerd, dam].forEach((p) => { if (p && p.foalsBred != null) { p.foalsBred += 1; p.foalQualSum = (p.foalQualSum || 0) + foal.quality; } });
       if (Game.stallFree() >= 1) {
         state.horses.push(foal);
         log('Geburt: ' + dam.name + ' hat ein ' + (foal.sex === 'hengst' ? 'Hengstfohlen' : 'Stutfohlen') + ' - "' + foal.name + '" (' + Genetics.describe(foal.genotype, 0).display + ', COI ' + (result.coi * 100).toFixed(1) + '%).', 'good');
@@ -779,6 +848,7 @@ const Game = (function () {
         state.cash += paid;
         state.stats.horsesSold += 1;
         state.stats.totalEarnings += paid;
+        recordSale(h.name, paid);
         Economy.applySaleImpact(state, h);
         log('Verkauft: ' + h.name + ' für ' + Economy.fmtEur(paid) + ' (nach ' + s.weeks + ' Wochen).', 'good');
         removeHorse(s.horseId);
@@ -800,6 +870,7 @@ const Game = (function () {
         const mine = r.results.filter((x) => x.player).sort((a, b) => a.place - b.place);
         const best = mine[0];
         state.stats.showWins += mine.filter((x) => x.place === 1).length;
+        if (r.totalPrize > (state.stats.biggestWin || 0)) state.stats.biggestWin = r.totalPrize;
         log('🏆 ' + show.name + ': bestes eigenes Pferd Platz ' + best.place + '/' + r.results.length +
           ' (' + best.scoreLabel + '). Preisgeld ' + Economy.fmtEur(r.totalPrize) +
           (r.travelCost ? ', Reise -' + Economy.fmtEur(r.travelCost) : '') + ', +' + r.prestigeGain + ' Prestige.', 'good');
@@ -830,6 +901,7 @@ const Game = (function () {
             state.cash += res.amount;
             state.stats.horsesSold += 1;
             state.stats.totalEarnings += res.amount;
+            recordSale(h.name, res.amount);
             Economy.applySaleImpact(state, h);
             removeHorse(h.id);
             log('Auktion: ' + h.name + ' für ' + Economy.fmtEur(res.amount) + ' verkauft.', 'good');
@@ -869,6 +941,32 @@ const Game = (function () {
     // 7) Zufallsereignisse (selten).
     maybeRandomEvent();
 
+    // 7b) Routinebehandlungen: Hufschmied + Wurmkur/Impfung.
+    if (state.horses.length) {
+      if (state.week >= (state.nextFarrierWeek || 0)) {
+        const bill = state.horses.length * Economy.FARRIER_COST;
+        if (state.cash >= bill) {
+          state.cash -= bill;
+          log('Hufschmied für alle ' + state.horses.length + ' Pferde: -' + Economy.fmtEur(bill) + '.', 'cost');
+        } else {
+          state.horses.forEach((h) => Model.injureHealth(h, Model.gauss(2.2, 0.8), ['Hufe']));
+          log('⚠️ Hufschmied konnte nicht bezahlt werden — die Hufe leiden.', 'warn');
+        }
+        state.nextFarrierWeek = state.week + Economy.FARRIER_EVERY;
+      }
+      if (state.week >= (state.nextVetRoutineWeek || 0)) {
+        const bill = state.horses.length * Economy.VETROUTINE_COST;
+        if (state.cash >= bill) {
+          state.cash -= bill;
+          log('Wurmkur & Impfung, ganzer Bestand: -' + Economy.fmtEur(bill) + '.', 'cost');
+        } else {
+          state.horses.forEach((h) => Model.injureHealth(h, Model.gauss(2.5, 1), ['Immunsystem']));
+          log('⚠️ Wurmkur/Impfung ausgelassen — das Immunsystem sinkt.', 'warn');
+        }
+        state.nextVetRoutineWeek = state.week + Economy.VETROUTINE_EVERY;
+      }
+    }
+
     // 8) Unterhalt abziehen (Anlagen + Futter + Pflege je Pferd).
     const upkeep = Economy.weeklyUpkeep(state);
     state.cash -= upkeep;
@@ -876,11 +974,24 @@ const Game = (function () {
     log('Wochenunterhalt: -' + Economy.fmtEur(upkeep) + ' (' + state.horses.length + ' Pferde × ' +
       Economy.fmtEur(perHorse) + ' Futter/Pflege + Anlagen).', 'cost');
 
-    // 9) Prestige-Zerfall + Bankrott-Warnung.
+    // 8b) Kredit-Zinsen.
+    if (state.debt > 0) {
+      const interest = Math.max(1, Math.round(state.debt * Economy.LOAN_RATE));
+      state.debt += interest;
+      state.cash -= interest;
+      log('Kreditzinsen: -' + Economy.fmtEur(interest) + ' (Restschuld ' + Economy.fmtEur(state.debt) + ').', 'cost');
+    }
+
+    // 9) Prestige-Zerfall + Bankrott-Warnung + Verlaufs-Stichprobe.
     state.prestige = Math.max(0, state.prestige - 0.5);
     if (state.cash < 0) {
-      log('⚠️ Dein Konto ist im Minus (' + Economy.fmtEur(state.cash) + '). Verkaufe Pferde, sonst droht das Aus.', 'warn');
+      log('⚠️ Dein Konto ist im Minus (' + Economy.fmtEur(state.cash) + '). Verkaufe Pferde oder nimm einen Kredit auf.', 'warn');
     }
+    const herdVal = state.horses.reduce((s, h) => s + valuation(h), 0);
+    state.history = state.history || [];
+    state.history.push({ week: state.week, cash: Math.round(state.cash), herd: Math.round(herdVal),
+      prestige: Math.round(state.prestige), debt: Math.round(state.debt), horses: state.horses.length });
+    if (state.history.length > 260) state.history.shift();
 
     save();
     emit();
@@ -933,6 +1044,7 @@ const Game = (function () {
     state.cash += o.price;
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += o.price;
+    recordSale(h.name, o.price);
     Economy.applySaleImpact(state, h);
     removeHorse(o.horseId);
     log('Angebot angenommen: ' + h.name + ' für ' + Economy.fmtEur(o.price) + ' verkauft.', 'good');
@@ -1035,6 +1147,9 @@ const Game = (function () {
     unlist: unlist,
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
+    applyPlanToAll: applyPlanToAll,
+    takeLoan: takeLoan,
+    repayLoan: repayLoan,
     createOffer: createOffer,
     cancelOffer: cancelOffer,
     previewCode: previewCode,

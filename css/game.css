@@ -180,6 +180,16 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 
 .badge-row { display: flex; flex-wrap: wrap; gap: .3rem; }
 
+/* Stammbaum */
+.ped-tree, .ped-children { display: flex; align-items: center; }
+.ped-tree { gap: .5rem; }
+.ped-children { flex-direction: column; gap: .35rem; }
+.ped-col { display: flex; align-items: center; gap: .5rem; }
+.ped-cell { display: flex; }
+.ped-node { border: 1px solid var(--border); border-radius: 6px; padding: .3rem .5rem; background: var(--surface-2); min-width: 130px; font-size: .82rem; }
+.ped-node.unknown { font-style: italic; color: var(--muted); }
+.ped-node.empty { color: var(--muted); border-style: dashed; }
+
 .trade-list div { padding: .3rem 0; border-bottom: 1px dashed var(--border); font-size: .88rem; }
 .trade-list div:last-child { border-bottom: none; }
 

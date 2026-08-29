@@ -69,6 +69,8 @@ const UI = (function () {
       const idx = h.leistungspruefung.index;
       b.push('<span class="tag ' + (idx >= 80 ? 'good' : 'warn') + '">LP-Index ' + idx + '</span>');
     }
+    const br = Model.breederRating(h);
+    if (br) b.push('<span class="tag rare" title="Ø Fohlenqualität ' + br.avg.toFixed(2) + ' aus ' + br.count + ' Fohlen">Vererber ' + '★'.repeat(br.stars) + '</span>');
     return b.join(' ');
   }
 
@@ -158,6 +160,8 @@ const UI = (function () {
           <div class="row between"><span>Kasse</span><b class="${s.cash < 0 ? 'tag warn' : ''}">${fmt(s.cash)}</b></div>
           <div class="row between"><span>Pferde</span><b>${s.horses.length} / ${Economy.stallCapacity(s)} Plätze</b></div>
           <div class="row between"><span>Wochenunterhalt</span><b>${fmt(upkeep)}</b></div>
+          <div class="row between small"><span class="muted">Hufschmied Wo. ${s.nextFarrierWeek || 0} · Wurmkur/Impfung Wo. ${s.nextVetRoutineWeek || 0}</span></div>
+          ${s.debt > 0 ? `<div class="row between"><span>Kredit-Restschuld</span><b class="tag warn">${fmt(s.debt)}</b></div>` : ''}
           <div class="row between"><span>Gezüchtete Fohlen</span><b>${s.stats.foalsBred}</b></div>
           <div class="row between"><span>Verkaufte Pferde</span><b>${s.stats.horsesSold}</b></div>
           <div class="row between"><span>Turniersiege</span><b>${s.stats.showWins}</b></div>
@@ -173,6 +177,11 @@ const UI = (function () {
           <h3>Anlagen</h3>
           <table><tbody>${facHtml}</tbody></table>
         </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:1rem">
+        ${bankCard(s)}
+        ${statsCard(s)}
       </div>
 
       <div class="card" style="margin-top:1rem">
@@ -244,6 +253,45 @@ const UI = (function () {
     </div>`;
   }
 
+  function bankCard(s) {
+    const max = Economy.maxLoan(s);
+    const room = max - (s.debt || 0);
+    return `<div class="card stack">
+      <h3>🏦 Bank</h3>
+      <div class="row between"><span>Restschuld</span><b class="${s.debt > 0 ? 'tag warn' : ''}">${fmt(s.debt || 0)}</b></div>
+      <div class="row between"><span>Kreditrahmen frei</span><b>${fmt(Math.max(0, room))}</b> <span class="muted small">von ${fmt(max)}</span></div>
+      <div class="small muted">Zins ${(Economy.LOAN_RATE * 100).toFixed(1)} % pro Woche auf die Restschuld.</div>
+      <div class="row">
+        <input type="number" id="loan-amount" class="bid-input" placeholder="Betrag €" step="1000">
+        <button class="small" data-action="take-loan" ${room <= 0 ? 'disabled' : ''}>Kredit aufnehmen</button>
+        <button class="small secondary" data-action="repay-loan" ${!(s.debt > 0) ? 'disabled' : ''}>tilgen</button>
+      </div>
+    </div>`;
+  }
+
+  function statsCard(s) {
+    const h = s.history || [];
+    let spark = '';
+    if (h.length >= 2) {
+      const vals = h.slice(-60).map((x) => x.cash);
+      const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+      const span = (mx - mn) || 1;
+      const pts = vals.map((v, i) => (i / (vals.length - 1) * 100).toFixed(1) + ',' + (30 - (v - mn) / span * 28).toFixed(1)).join(' ');
+      spark = '<svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:56px;background:var(--surface-2);border-radius:var(--radius)">' +
+        '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="1"/></svg>' +
+        '<div class="row between small muted"><span>' + fmt(mn) + '</span><span>Kassenverlauf (bis 60 Wo.)</span><span>' + fmt(mx) + '</span></div>';
+    }
+    const bs = s.stats.bestSale;
+    return `<div class="card stack">
+      <h3>📈 Statistik</h3>
+      ${spark || '<p class="small muted">Verlauf erscheint nach ein paar Wochen.</p>'}
+      <div class="row between"><span>Gesamteinnahmen</span><b>${fmt(s.stats.totalEarnings || 0)}</b></div>
+      <div class="row between"><span>Bester Einzelverkauf</span><b>${bs ? esc(bs.name) + ' — ' + fmt(bs.amount) : '—'}</b></div>
+      <div class="row between"><span>Größter Turniertag</span><b>${fmt(s.stats.biggestWin || 0)}</b></div>
+      <div class="row between"><span>Bestandswert</span><b>${fmt(s.horses.reduce((a, x) => a + Game.valuation(x), 0))}</b></div>
+    </div>`;
+  }
+
   function friendPending(s) {
     const offers = (s.pendingOffers || []).map((o) => {
       const h = Game.getHorse(o.horseId);
@@ -294,16 +342,67 @@ const UI = (function () {
   }
 
   // --- 🐴 Stall --------------------------------------------------------
+  let stallFilter = { sex: '', breed: '', disc: '', text: '', flag: '', sort: 'age', dir: 1 };
+  let compareIds = [];
+
+  function stallFilterBar(s) {
+    const breeds = Array.from(new Set(s.horses.map((h) => h.breed))).sort();
+    const f = stallFilter;
+    const o = (v, cur, lbl) => '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + lbl + '</option>';
+    return `<div class="stud-filter">
+      <label class="small">Suche<input type="text" data-action="stall-filter" data-field="text" value="${esc(f.text)}" placeholder="Name…" style="width:8rem"></label>
+      <label class="small">Geschlecht<select data-action="stall-filter" data-field="sex">${o('', f.sex, 'alle')}${o('hengst', f.sex, '♂ Hengst')}${o('stute', f.sex, '♀ Stute')}${o('wallach', f.sex, '⚬ Wallach')}</select></label>
+      <label class="small">Rasse<select data-action="stall-filter" data-field="breed">${o('', f.breed, 'alle')}${breeds.map((b) => o(b, f.breed, esc(b))).join('')}</select></label>
+      <label class="small">stark in<select data-action="stall-filter" data-field="disc">${o('', f.disc, '—')}${DISC.map((d) => o(d, f.disc, d)).join('')}</select></label>
+      <label class="small">Status<select data-action="stall-filter" data-field="flag">${o('', f.flag, 'alle')}${o('adult', f.flag, 'ab 3 J.')}${o('young', f.flag, 'Jungpferde')}${o('pregnant', f.flag, 'tragend')}${o('sale', f.flag, 'im Verkauf')}${o('sick', f.flag, 'Gesundheit < 60')}${o('noplan', f.flag, 'ohne Trainingsplan')}${o('ungekört', f.flag, 'Hengst ohne Körung')}</select></label>
+      <label class="small">Sortieren<select data-action="stall-filter" data-field="sort">${o('age', f.sort, 'Alter')}${o('name', f.sort, 'Name')}${o('value', f.sort, 'Wert')}${o('ex', f.sort, 'Exterieur')}${o('in', f.sort, 'Interieur')}${o('he', f.sort, 'Gesundheit')}${DISC.map((d) => o(d, f.sort, d)).join('')}</select></label>
+      <button class="small secondary" data-action="stall-filter" data-field="dir" data-toggle="1">${f.dir === 1 ? '↑' : '↓'}</button>
+      <button class="small secondary" data-action="stall-filter-reset">zurücksetzen</button>
+    </div>`;
+  }
+
+  function stallFilteredSorted(s) {
+    const f = stallFilter;
+    let list = s.horses.slice();
+    if (f.text) list = list.filter((h) => h.name.toLowerCase().indexOf(f.text.toLowerCase()) !== -1);
+    if (f.sex) list = list.filter((h) => h.sex === f.sex);
+    if (f.breed) list = list.filter((h) => h.breed === f.breed);
+    if (f.flag === 'adult') list = list.filter((h) => ageYears(h) >= Model.MATURITY_YEARS);
+    else if (f.flag === 'young') list = list.filter((h) => ageYears(h) < Model.MATURITY_YEARS);
+    else if (f.flag === 'pregnant') list = list.filter((h) => h.pregnancy);
+    else if (f.flag === 'sale') list = list.filter((h) => h.forSale || h.offered);
+    else if (f.flag === 'sick') list = list.filter((h) => h.health < 60);
+    else if (f.flag === 'noplan') list = list.filter((h) => ageYears(h) >= Model.MATURITY_YEARS && !(h.trainingPlan || []).some((d) => d));
+    else if (f.flag === 'ungekört') list = list.filter((h) => h.sex === 'hengst' && !h.noPapers && !h.isMix && ageYears(h) >= Model.MATURITY_YEARS && Model.approvalRank(h.zuchtzulassung) < 2);
+    const val = (h) => {
+      switch (f.sort) {
+        case 'name': return h.name.toLowerCase();
+        case 'value': return Game.valuation(h);
+        case 'ex': return h.conformation;
+        case 'in': return h.temperament;
+        case 'he': return h.health;
+        case 'age': return ageYears(h);
+        default: return DISC.indexOf(f.sort) !== -1 ? (h.skill[f.sort] + h.potential[f.sort] * 0.3) : ageYears(h);
+      }
+    };
+    list.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * f.dir; });
+    return list;
+  }
+
   views.stall = function () {
     const s = Game.state;
     if (!s.horses.length) return '<div class="card"><p class="muted">Dein Stall ist leer. Kaufe Pferde im Tab „Markt".</p></div>';
     if (selectedId && !Game.getHorse(selectedId)) selectedId = null;
+    compareIds = compareIds.filter((id) => Game.getHorse(id));
 
-    const rows = s.horses.slice().sort(sortHorses).map((h) => {
+    const list = stallFilteredSorted(s);
+    const rows = list.map((h) => {
       const best = Model.bestDiscipline(h);
       const preg = h.pregnancy ? ' 🤰' + h.pregnancy.weeksLeft + 'W' : '';
       const sale = h.forSale ? ' 🏷️' : (h.offered ? ' 🔒' : '');
+      const cmp = compareIds.indexOf(h.id) !== -1;
       return '<tr class="clickable ' + (h.id === selectedId ? 'selected' : '') + '" data-action="select-horse" data-id="' + h.id + '">' +
+        '<td><button class="small secondary" data-action="cmp-toggle" data-id="' + h.id + '" title="vergleichen"' + (cmp ? ' style="background:var(--accent);color:#fff"' : '') + '>⚖</button></td>' +
         '<td><b>' + esc(h.name) + '</b>' + preg + sale + '<br><span class="muted small">' + esc(h.breed) + '</span></td>' +
         '<td class="small">' + sexIcon(h) + '<br>' + ageStr(h) + '</td>' +
         '<td class="small">' + esc(phenoOf(h).display) + ' ' + rarityTag(h) + '</td>' +
@@ -313,16 +412,46 @@ const UI = (function () {
         '</tr>';
     }).join('');
 
+    const right = compareIds.length === 2
+      ? compareCard(Game.getHorse(compareIds[0]), Game.getHorse(compareIds[1]))
+      : (selectedId ? horseDetail(Game.getHorse(selectedId)) : '<div class="card"><p class="muted">Pferd anklicken für Details. ⚖ an zwei Pferden = Vergleich.</p></div>');
+
     return `
+      <div class="card" style="margin-bottom:1rem">${stallFilterBar(s)}</div>
       <div class="grid" style="grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap:1rem">
         <div class="card">
-          <h3>Stall · ${s.horses.length} Pferde</h3>
-          <table><thead><tr><th>Name</th><th>Typ/Alter</th><th>Farbe</th><th>beste Disziplin</th><th>Ext.</th><th class="right">Wert</th></tr></thead>
-          <tbody>${rows}</tbody></table>
+          <h3>Stall · ${list.length}${list.length !== s.horses.length ? ' / ' + s.horses.length : ''} Pferde</h3>
+          <div class="table-wrap"><table><thead><tr><th></th><th>Name</th><th>Typ/Alter</th><th>Farbe</th><th>beste Disziplin</th><th>Ext.</th><th class="right">Wert</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
         </div>
-        <div>${selectedId ? horseDetail(Game.getHorse(selectedId)) : '<div class="card"><p class="muted">Pferd anklicken für Details, Training, Verkauf und Auktion.</p></div>'}</div>
+        <div>${right}</div>
       </div>`;
   };
+
+  // --- Zwei Pferde nebeneinander vergleichen.
+  function compareCard(a, b) {
+    if (!a || !b) return '';
+    const rowN = (label, va, vb, digits) => {
+      const na = typeof va === 'number' ? va : parseFloat(va);
+      const nb = typeof vb === 'number' ? vb : parseFloat(vb);
+      const ca = !isNaN(na) && !isNaN(nb) ? (na > nb ? 'cmp-good' : na < nb ? 'cmp-bad' : '') : '';
+      const cb = !isNaN(na) && !isNaN(nb) ? (nb > na ? 'cmp-good' : nb < na ? 'cmp-bad' : '') : '';
+      const fmtv = (v) => (typeof v === 'number' ? (digits ? v.toFixed(digits) : Math.round(v)) : v);
+      return '<tr><td>' + esc(label) + '</td><td class="right ' + ca + '">' + fmtv(va) + '</td><td class="right ' + cb + '">' + fmtv(vb) + '</td></tr>';
+    };
+    let rows = '<tr><td></td><td class="right"><b>' + esc(a.name) + '</b></td><td class="right"><b>' + esc(b.name) + '</b></td></tr>';
+    rows += rowN('Alter', ageYears(a), ageYears(b), 1);
+    rows += rowN('Wert', Game.valuation(a), Game.valuation(b));
+    rows += rowN('Marktwert', Game.marketPrice(a), Game.marketPrice(b));
+    rows += rowN('Exterieur', a.conformation, b.conformation);
+    rows += rowN('Interieur', a.temperament, b.temperament);
+    rows += rowN('Gesundheit', a.health, b.health);
+    DISC.forEach((d) => { rows += rowN(d + ' (Pot.)', a.potential[d], b.potential[d]); });
+    return `<div class="card stack">
+      <div class="row between"><h3 style="margin:0">Vergleich</h3><button class="small secondary" data-action="cmp-clear">×</button></div>
+      <table class="small">${rows}</table>
+    </div>`;
+  }
 
   function sortHorses(a, b) {
     if (a.sex !== b.sex) return a.sex === 'hengst' ? -1 : 1;
@@ -374,7 +503,8 @@ const UI = (function () {
     return `
       <div class="card stack">
         <div class="row between">
-          <h3 style="margin:0">${esc(h.name)} <button class="small secondary" data-action="rename-horse" data-id="${h.id}">✎</button></h3>
+          <h3 style="margin:0">${esc(h.name)} <button class="small secondary" data-action="rename-horse" data-id="${h.id}">✎</button>
+            <button class="small secondary" data-action="pedigree" data-id="${h.id}">🌳 Stammbaum</button></h3>
           <span class="muted small">${sexIcon(h)} · ${ageStr(h)}</span>
         </div>
         <div class="small muted">${esc(h.breed)}${(h.isMix || Model.isMixBreed(h.breed)) ? ' <span class="tag warn">Mix</span>' : ''}</div>
@@ -396,6 +526,7 @@ const UI = (function () {
           <b class="small">Wochen-Trainingsplan</b> <span class="muted small">(6 Einheiten, wird bei „Woche weiter" abgearbeitet)</span>
           ${planEditor}
           ${planHint}
+          ${plan.some((d) => d) ? '<button class="small secondary" data-action="plan-to-all" data-id="' + h.id + '">Diesen Plan auf alle erwachsenen Pferde</button>' : ''}
         </div>
         ${adult ? '' : '<p class="small muted">Training, Zucht und Turniere erst ab 3 Jahren.</p>'}
         ${pts}
@@ -909,6 +1040,8 @@ const UI = (function () {
     $('#code-overlay').addEventListener('click', (e) => { if (e.target.id === 'code-overlay') $('#code-overlay').hidden = true; });
     $('#btn-trade-close').addEventListener('click', () => { $('#trade-overlay').hidden = true; });
     $('#trade-overlay').addEventListener('click', (e) => { if (e.target.id === 'trade-overlay') $('#trade-overlay').hidden = true; });
+    $('#btn-pedigree-close').addEventListener('click', () => { $('#pedigree-overlay').hidden = true; });
+    $('#pedigree-overlay').addEventListener('click', (e) => { if (e.target.id === 'pedigree-overlay') $('#pedigree-overlay').hidden = true; });
     $('#trade-actions').addEventListener('click', onTradeAction);
     $('#btn-code-copy').addEventListener('click', () => {
       const t = $('#code-text'); t.select();
@@ -942,6 +1075,7 @@ const UI = (function () {
     } else if (t.dataset.action === 'set-feed') { Game.setFeed(parseInt(t.value, 10)); toast('Fütterung: ' + Economy.FEED[Game.state.feedLevel].label); }
     else if (t.dataset.action === 'set-care') { Game.setCare(parseInt(t.value, 10)); toast('Pflege: ' + Economy.CARE[Game.state.careLevel].label); }
     else if (t.dataset.action === 'stud-filter' && !t.dataset.toggle) { studFilter[t.dataset.field] = t.value; render(); }
+    else if (t.dataset.action === 'stall-filter' && !t.dataset.toggle) { stallFilter[t.dataset.field] = t.value; render(); }
     else if (t.dataset.action === 'pick-sire') { breedSire = t.value || null; render(); }
     else if (t.dataset.action === 'pick-dam') { breedDam = t.value || null; render(); }
   }
@@ -957,6 +1091,29 @@ const UI = (function () {
     if (a === 'pick-stud') { breedSire = el.dataset.id; render(); toast('Hengst in den Zuchtplaner übernommen.'); return; }
 
     if (a === 'stud-filter' && el.dataset.toggle) { studFilter.dir *= -1; render(); return; }
+    if (a === 'stall-filter' && el.dataset.toggle) { stallFilter.dir *= -1; render(); return; }
+    if (a === 'stall-filter-reset') { stallFilter = { sex: '', breed: '', disc: '', text: '', flag: '', sort: 'age', dir: 1 }; render(); return; }
+    if (a === 'cmp-toggle') {
+      const id = el.dataset.id;
+      const i = compareIds.indexOf(id);
+      if (i !== -1) compareIds.splice(i, 1);
+      else { compareIds.push(id); if (compareIds.length > 2) compareIds.shift(); }
+      render();
+      return;
+    }
+    if (a === 'cmp-clear') { compareIds = []; render(); return; }
+    if (a === 'take-loan') {
+      const v = parseInt(($('#loan-amount') || {}).value, 10);
+      const r = Game.takeLoan(v || 0);
+      toast(r.ok ? 'Kredit +' + fmt(r.amount) + '.' : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'repay-loan') {
+      const v = parseInt(($('#loan-amount') || {}).value, 10) || Game.state.debt;
+      const r = Game.repayLoan(v);
+      toast(r.ok ? 'Getilgt: ' + fmt(r.amount) + '.' : r.msg, !r.ok);
+      return;
+    }
     if (a === 'stud-filter-reset') {
       studFilter = { breed: '', exMin: '', disc: '', begMin: '', inMin: '', heMin: '', feeMax: '', sort: 'fee', dir: 1 };
       render(); return;
@@ -1032,6 +1189,16 @@ const UI = (function () {
       const r = Game.startPerformanceTest(el.dataset.id);
       if (!r.ok) toast(r.msg, true); else toast('Zur Leistungsprüfung angemeldet.');
       render();
+      return;
+    }
+    if (a === 'pedigree') { UI.showPedigree(el.dataset.id); return; }
+    if (a === 'plan-to-all') {
+      const h = Game.getHorse(el.dataset.id);
+      if (h && confirm('Den Trainingsplan von „' + h.name + '" auf ALLE erwachsenen Pferde übertragen (überschreibt deren Pläne)?')) {
+        const r = Game.applyPlanToAll(h.trainingPlan || []);
+        toast('Plan auf ' + r.count + ' Pferde übertragen.');
+        render();
+      }
       return;
     }
 
@@ -1144,6 +1311,43 @@ const UI = (function () {
     Game.onChange(() => render());
   }
 
+  // --- Stammbaum-Grafik (rekursives Fächer-Layout).
+  function pedNodeHtml(n, gen) {
+    if (!n) return '<div class="ped-node empty">—</div>';
+    if (n.empty) return '<div class="ped-node empty">—</div>';
+    if (n.unknown) return '<div class="ped-node unknown">' + esc(n.name) + '</div>';
+    const tags = [];
+    if (n.zuchtzulassung && /Zuchtbuch I\b/.test(n.zuchtzulassung)) tags.push('ZB I');
+    else if (n.zuchtzulassung) tags.push('ZB II');
+    if (n.titel) tags.push(n.titel[0] === 'S' ? 'Sieger' : n.titel);
+    if (n.praemie) tags.push(n.praemie.replace('-Prämie', ''));
+    return '<div class="ped-node"><b>' + esc(n.name) + '</b>' +
+      '<div class="muted small">' + esc(n.breed || '') + (gen <= 1 ? ' · Ext.' + n.conf : '') + '</div>' +
+      (tags.length ? '<div class="small">' + tags.map(esc).join(' · ') + '</div>' : '') + '</div>';
+  }
+  function pedColumnHtml(node, gen, maxGen) {
+    if (gen > maxGen) return '';
+    return '<div class="ped-col">' +
+      '<div class="ped-cell">' + pedNodeHtml(node, gen) + '</div>' +
+      (gen < maxGen && node && !node.unknown && !node.empty
+        ? '<div class="ped-children">' + pedColumnHtml(node.sire, gen + 1, maxGen) + pedColumnHtml(node.dam, gen + 1, maxGen) + '</div>'
+        : '') + '</div>';
+  }
+  function showPedigree(id) {
+    const h = Game.getHorse(id);
+    if (!h) return;
+    const ped = Model.pedigree(h, Game.getHorse, 4);
+    const sp = Game.getHorse(h.sireId), dp = Game.getHorse(h.damId);
+    const coiTxt = (sp && dp) ? (Model.inbreedingCoefficient(sp, dp) * 100).toFixed(1) + ' %' : 'nicht berechenbar (Eltern nicht im Stall)';
+    $('#pedigree-title').textContent = 'Stammbaum — ' + h.name;
+    $('#pedigree-body').innerHTML =
+      '<p class="small muted">Inzuchtkoeffizient (COI) dieses Pferdes: ' + coiTxt + '. ' +
+      'Bekannt sind nur Vorfahren aus deinem Stall oder gespeicherte Elternnamen.</p>' +
+      '<div class="ped-tree"><div class="ped-cell"><div class="ped-node"><b>' + esc(h.name) + '</b><div class="muted small">' + esc(h.breed) + '</div></div></div>' +
+      '<div class="ped-children">' + pedColumnHtml(ped.sire, 1, 4) + pedColumnHtml(ped.dam, 1, 4) + '</div></div>';
+    $('#pedigree-overlay').hidden = false;
+  }
+
   function showCode(title, hint, code) {
     $('#code-title').textContent = title;
     $('#code-hint').textContent = hint || '';
@@ -1232,5 +1436,5 @@ const UI = (function () {
     render();
   }
 
-  return { init: init, showTab: showTab, toast: toast, showCode: showCode, showTradePreview: showTradePreview };
+  return { init: init, showTab: showTab, toast: toast, showCode: showCode, showTradePreview: showTradePreview, showPedigree: showPedigree };
 })();
