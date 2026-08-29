@@ -188,6 +188,10 @@ const UI = (function () {
         ${staffCard(s)}
         ${sponsorCard(s)}
       </div>
+      <div class="grid cols-2" style="margin-top:1rem">
+        ${breedingOrderCard(s)}
+        ${zuchtbuchCard(s)}
+      </div>
 
       <div class="card" style="margin-top:1rem">
         <h3>🥕 Futter &amp; Pflege</h3>
@@ -327,6 +331,49 @@ const UI = (function () {
       <h3>💼 Sponsoren <span class="muted small">(${(s.sponsors || []).length}/2)</span></h3>
       ${active}
       ${offers ? '<div class="small muted" style="margin-top:.3rem">Angebote:</div>' + offers : (s.prestige < 60 ? '<p class="small muted">Sponsoren melden sich ab etwas Prestige.</p>' : '')}
+    </div>`;
+  }
+
+  function breedingOrderCard(s) {
+    const orders = (s.breedingOrders || []).map((o) => {
+      const matches = (s.horses || []).filter((h) => !h.offered && !h.pregnancy && Economy.orderMatch(o, h, s.week).ok);
+      const left = o.deadlineWeek - s.week;
+      const pick = matches.length
+        ? '<select data-role="order-horse">' +
+            matches.map((h) => '<option value="' + h.id + '">' + esc(h.name) + ' (' + esc(h.breed) + ', ' + ageYears(h).toFixed(0) + ' J.)</option>').join('') +
+          '</select> <button class="small" data-action="fulfill-order" data-id="' + o.id + '">abgeben</button>'
+        : '<span class="muted small">kein passendes Pferd im Bestand</span>';
+      return '<div class="card" style="background:var(--surface-2)">' +
+        '<div class="row between"><b>' + esc(o.client) + '</b><span class="tag ' + (left <= 3 ? 'warn' : '') + '">noch ' + left + ' Wo.</span></div>' +
+        '<div class="small muted">' + esc(Economy.orderSummary(o)) + '</div>' +
+        '<div class="small" style="margin-top:.3rem">Prämie <b>' + fmt(o.reward) + '</b> · +' + o.prestige + ' Prestige</div>' +
+        '<div style="margin-top:.4rem">' + pick + '</div></div>';
+    }).join('') || '<p class="small muted">Zur Zeit keine offenen Aufträge.</p>';
+    return `<div class="card stack">
+      <h3>🎯 Zuchtaufträge <span class="muted small">(${(s.breedingOrders || []).length})</span></h3>
+      <p class="small muted">Verbände &amp; Kunden suchen Pferde nach Vorgabe. Passendes Pferd abgeben → Prämie + Prestige.
+      Läuft ein Auftrag aus, kostet das −4 Prestige.</p>
+      ${orders}
+    </div>`;
+  }
+
+  function zuchtbuchCard(s) {
+    const homebred = (s.horses || []).filter((h) => h.origin === 'eigene Zucht');
+    const best = homebred.slice().sort((a, b) => Game.valuation(b) - Game.valuation(a))[0];
+    const avgQ = homebred.length ? Math.round(homebred.reduce((a, h) => a + (h.quality || 0), 0) / homebred.length * 100) : 0;
+    return `<div class="card stack">
+      <h3>📖 Mein Zuchtbuch</h3>
+      <label class="small" style="display:block">Zuchtstempel / Präfix <span class="muted">(wird eigenen Nachzuchten vorangestellt)</span>
+        <div class="row" style="margin-top:.2rem">
+          <input type="text" id="prefix-input" value="${esc(s.studPrefix || '')}" maxlength="16" placeholder="z.B. Eichenhof" style="flex:1;min-width:120px">
+          <button class="small" data-action="save-prefix">speichern</button>
+        </div>
+      </label>
+      <label class="small row" style="gap:.4rem;cursor:pointer"><input type="checkbox" data-action="toggle-prefix" ${s.prefixOn ? 'checked' : ''}> Präfix bei der Geburt automatisch vergeben</label>
+      <div class="row between"><span>Eigene Nachzuchten im Bestand</span><b>${homebred.length}</b></div>
+      <div class="row between"><span>Ø Qualität der Nachzuchten</span><b>${avgQ ? avgQ + ' %' : '—'}</b></div>
+      <div class="row between"><span>Bestes eigenes Pferd</span><b>${best ? esc(best.name) + ' — ' + fmt(Game.valuation(best)) : '—'}</b></div>
+      <div class="row between"><span>Gezüchtete Fohlen gesamt</span><b>${s.stats.foalsBred || 0}</b></div>
     </div>`;
   }
 
@@ -570,6 +617,7 @@ const UI = (function () {
         ${pts}
         ${lpBlock(h)}
         ${showRec}
+        ${orderMatchBlock(h)}
 
         <hr style="border:none;border-top:1px solid var(--border)">
         ${h.offered ? `
@@ -591,6 +639,17 @@ const UI = (function () {
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
+  }
+
+  function orderMatchBlock(h) {
+    if (h.offered || h.pregnancy) return '';
+    const ms = (Game.state.breedingOrders || []).filter((o) => Economy.orderMatch(o, h, Game.state.week).ok);
+    if (!ms.length) return '';
+    return '<div class="card" style="background:var(--surface-2)">' +
+      '<b class="small">🎯 Passt auf ' + ms.length + ' Zuchtauftrag' + (ms.length > 1 ? '/-aufträge' : '') + '</b>' +
+      ms.map((o) => '<div class="row between small" style="margin-top:.2rem"><span>' + esc(o.client) + ' — <b>' + fmt(o.reward) + '</b>, +' + o.prestige + ' Prestige</span>' +
+        '<button class="small" data-action="fulfill-order-direct" data-order="' + o.id + '" data-id="' + h.id + '">' + esc(h.name) + ' abgeben</button></div>').join('') +
+      '</div>';
   }
 
   function lpBlock(h) {
@@ -1143,6 +1202,26 @@ const UI = (function () {
     if (a === 'hire-staff') { const r = Game.hireStaff(parseInt(el.dataset.idx, 10)); toast(r.ok ? 'Eingestellt.' : r.msg, !r.ok); return; }
     if (a === 'fire-staff') { Game.fireStaff(el.dataset.id); return; }
     if (a === 'sign-sponsor') { const r = Game.signSponsor(parseInt(el.dataset.idx, 10)); toast(r.ok ? 'Vertrag unterschrieben.' : r.msg, !r.ok); return; }
+    if (a === 'fulfill-order') {
+      const box = el.closest('div');
+      const sel = box ? box.querySelector('[data-role="order-horse"]') : null;
+      if (!sel || !sel.value) { toast('Kein passendes Pferd.', true); return; }
+      const r = Game.fulfillBreedingOrder(el.dataset.id, sel.value);
+      toast(r.ok ? 'Auftrag erfüllt: +' + fmt(r.amount) : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'fulfill-order-direct') {
+      const r = Game.fulfillBreedingOrder(el.dataset.order, el.dataset.id);
+      toast(r.ok ? 'Auftrag erfüllt: +' + fmt(r.amount) : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'save-prefix') {
+      const inp = document.getElementById('prefix-input');
+      Game.setStudPrefix(inp ? inp.value : '');
+      toast('Zuchtstempel gespeichert.');
+      return;
+    }
+    if (a === 'toggle-prefix') { Game.setPrefixOn(el.checked); return; }
     if (a === 'drop-sponsor') {
       if (confirm('Sponsorenvertrag vorzeitig beenden? (kein Bonus, kleiner Prestige-Verlust)')) Game.dropSponsor(el.dataset.id);
       return;

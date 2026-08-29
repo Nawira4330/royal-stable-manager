@@ -41,7 +41,10 @@ auf dem Startbildschirm alle Regeln.
   Altersverschleiß), **Personal** (Bereiter mit Spezialdisziplinen → mehr
   Trainingszuwachs; Stallmeister → weniger Pflegekosten und Krankheits-
   ereignisse), **Sponsoren** (ab Prestige 60: Wochenzahlung gegen
-  Startauflage + Abschlussbonus), Chronik.
+  Startauflage + Abschlussbonus), **Zuchtaufträge** (Verbände/Kunden suchen
+  Pferde nach Vorgabe: Prämie + Prestige, verfallene Aufträge kosten Prestige),
+  **Zuchtbuch/Zuchtstempel** (Präfix wird eigenen Nachzuchten vorangestellt),
+  Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
   vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
   Gesundheit (5 Einzelnoten: Fundament & Sehnen, Atemwege, Herz-Kreislauf,

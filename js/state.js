@@ -19,11 +19,21 @@ const Game = (function () {
     if (state.eventLog.length > 200) state.eventLog.pop();
   }
 
+  // Zuchtstempel aus dem Gestütsnamen ableiten ("Gestüt Eichenhof" -> "Eichenhof").
+  function derivePrefix(name) {
+    if (!name) return '';
+    const n = String(name).replace(/^(Gestüt|Gestuet|Stall|Hof|Reitstall|Zuchtstall)\s+/i, '').trim();
+    return (n.split(/\s+/)[0] || n).slice(0, 16);
+  }
+
   // --- Neues Spiel.
   function newGame(studName) {
+    const sName = studName || Names.randStudName();
     state = {
       version: 4,
-      studName: studName || Names.randStudName(),
+      studName: sName,
+      studPrefix: derivePrefix(sName),
+      prefixOn: true,
       week: 0,
       cash: 60000,
       prestige: 0,
@@ -58,6 +68,8 @@ const Game = (function () {
       sponsors: [],
       sponsorOffers: [],
       nextSponsorWeek: 8,
+      breedingOrders: [],
+      nextOrderWeek: 5,
       lastSeasonIdx: -1,
       rivals: [],
       seasonYear: 1,
@@ -74,6 +86,7 @@ const Game = (function () {
 
     state.rivals = Economy.initRivals(state);
     state.staffMarket = Economy.rollStaffMarket(state);
+    state.breedingOrders = Economy.rollBreedingOrders(state);
     state.market = Economy.rollMarket(state);
     state.studRoster = Economy.rollStudRoster(state);
     state.shows = Economy.rollShows(state);
@@ -108,6 +121,10 @@ const Game = (function () {
     if (!Array.isArray(state.sponsors)) state.sponsors = [];
     if (!Array.isArray(state.sponsorOffers)) state.sponsorOffers = [];
     if (state.nextSponsorWeek == null) state.nextSponsorWeek = state.week + 4;
+    if (!Array.isArray(state.breedingOrders)) state.breedingOrders = Economy.rollBreedingOrders(state);
+    if (state.nextOrderWeek == null) state.nextOrderWeek = state.week + 5;
+    if (state.studPrefix == null) state.studPrefix = derivePrefix(state.studName);
+    if (state.prefixOn == null) state.prefixOn = true;
     if (state.lastSeasonIdx == null) state.lastSeasonIdx = Economy.season(state.week).idx;
     if (!state.stats) state.stats = {};
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
@@ -248,6 +265,42 @@ const Game = (function () {
     log('Sponsorenvertrag vorzeitig beendet.', 'warn');
     save(); emit();
     return { ok: true };
+  }
+
+  // --- Zuchtbuch / Zuchtstempel -----------------------------------------
+  function setStudPrefix(str) {
+    state.studPrefix = String(str || '').trim().slice(0, 16);
+    save(); emit();
+    return { ok: true };
+  }
+  function setPrefixOn(on) { state.prefixOn = !!on; save(); emit(); return { ok: true }; }
+  function foalName() {
+    const base = Names.randName();
+    return (state.prefixOn && state.studPrefix) ? state.studPrefix + ' ' + base : base;
+  }
+
+  // --- Zuchtaufträge -------------------------------------------------
+  function fulfillBreedingOrder(orderId, horseId) {
+    const order = (state.breedingOrders || []).find((o) => o.id === orderId);
+    const h = getHorse(horseId);
+    if (!order || !h) return { ok: false, msg: 'Auftrag oder Pferd nicht gefunden.' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
+    if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute lässt sich nicht abgeben.' };
+    if (h.forSale) return { ok: false, msg: h.name + ' steht am Markt zum Verkauf — erst zurückziehen.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
+    const m = Economy.orderMatch(order, h, state.week);
+    if (!m.ok) return { ok: false, msg: h.name + ' passt nicht: ' + m.reasons.join(', ') };
+    state.cash += order.reward;
+    state.prestige += order.prestige;
+    state.stats.horsesSold += 1;
+    state.stats.totalEarnings += order.reward;
+    recordSale(h.name, order.reward);
+    Economy.applySaleImpact(state, h);
+    removeHorse(horseId);
+    state.breedingOrders = state.breedingOrders.filter((o) => o.id !== orderId);
+    log('🎯 Zuchtauftrag von ' + order.client + ' erfüllt mit ' + h.name + ': +' + Economy.fmtEur(order.reward) + ', +' + order.prestige + ' Prestige.', 'good');
+    save(); emit();
+    return { ok: true, amount: order.reward };
   }
 
   // Denselben Wochenplan auf mehrere Pferde übertragen.
@@ -910,7 +963,7 @@ const Game = (function () {
       const foal = result.foal;
       Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth - (foal._complication || 0));
       delete foal._complication;
-      foal.name = Names.randName();
+      foal.name = foalName();
       state.stats.foalsBred += 1;
       // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
       const sireHerd = sire && sire.id ? getHorse(sire.id) : null;
@@ -1027,6 +1080,21 @@ const Game = (function () {
         log('💼 Neue Sponsoren-Angebote (Tab Gestüt).', 'info');
       }
       state.nextSponsorWeek = state.week + 10;
+    }
+    // Zuchtaufträge: abgelaufene entfernen, Liste periodisch auffüllen.
+    const keptOrders = [];
+    (state.breedingOrders || []).forEach((o) => {
+      if (state.week >= o.deadlineWeek) {
+        state.prestige = Math.max(0, state.prestige - 4);
+        log('🎯 Zuchtauftrag von ' + o.client + ' ausgelaufen (nicht erfüllt) — −4 Prestige.', 'warn');
+      } else keptOrders.push(o);
+    });
+    state.breedingOrders = keptOrders;
+    if (state.week >= (state.nextOrderWeek || 0)) {
+      const before = state.breedingOrders.length;
+      state.breedingOrders = Economy.rollBreedingOrders(state, state.breedingOrders);
+      state.nextOrderWeek = state.week + 9;
+      if (state.breedingOrders.length > before) log('🎯 Neue Zuchtaufträge (Tab Gestüt).', 'info');
     }
 
     // Sponsoren: Wochenzahlung + Vertragsende.
@@ -1242,6 +1310,15 @@ const Game = (function () {
       t.push({ icon: '🏆', tab: 'schauen', kind: 'info',
         text: 'Jahres-Championat in ' + champIn + ' Woche' + (champIn > 1 ? 'n' : '') + ' — in ' + nQual + ' Disziplin(en) qualifiziert' });
     }
+    (state.breedingOrders || []).forEach((o) => {
+      const left = o.deadlineWeek - state.week;
+      const canDo = state.horses.some((h) => !h.offered && !h.pregnancy && Economy.orderMatch(o, h, state.week).ok);
+      if (canDo) t.push({ icon: '🎯', tab: 'gestüt', kind: 'info',
+        text: 'Zuchtauftrag ' + o.client + ' (' + Economy.fmtEur(o.reward) + ') mit einem Pferd im Bestand erfüllbar' });
+      else if (left <= 3) t.push({ icon: '🎯', tab: 'gestüt', kind: 'warn',
+        text: 'Zuchtauftrag ' + o.client + ' läuft in ' + left + ' Woche' + (left === 1 ? '' : 'n') + ' aus' });
+    });
+
     const unconfirmed = (state.friendStuds || []).filter((x) => x.pendingSettle);
     unconfirmed.forEach((x) => t.push({ icon: '🧾', tab: 'gestüt', kind: (state.week - x.pendingSettle.sentWeek > 8 ? 'warn' : 'info'),
       text: 'Decktaxe-Abrechnung für ' + x.horse.name + ' (' + Economy.fmtEur(x.pendingSettle.amount) + ') an ' + x.friend + ' — noch nicht bestätigt' }));
@@ -1276,6 +1353,9 @@ const Game = (function () {
     fireStaff: fireStaff,
     signSponsor: signSponsor,
     dropSponsor: dropSponsor,
+    setStudPrefix: setStudPrefix,
+    setPrefixOn: setPrefixOn,
+    fulfillBreedingOrder: fulfillBreedingOrder,
     createOffer: createOffer,
     cancelOffer: cancelOffer,
     previewCode: previewCode,

@@ -751,6 +751,73 @@ const Economy = (function () {
     return summary;
   }
 
+  // --- Zuchtaufträge: Verbände & Kunden suchen Pferde nach Vorgabe. Erfüllt
+  //     man einen Auftrag mit einem passenden Pferd, gibt es Prämie + Prestige;
+  //     läuft er aus, kostet das etwas Prestige. Die Vorgaben werden mit dem
+  //     Rang strenger (und die Prämien höher).
+  const ORDER_CLIENTS = ['Zuchtverband Nord', 'Reitverein Falkensee', 'Landgestüt Celle',
+    'Turnierstall Brandt', 'Ponyhof Sonnenwiese', 'Distanzsport-Team Süd', 'Fahrverein Grün-Weiß',
+    'Rennstall Meder', 'Vielseitigkeitskader', 'Gestüt Auersberg (Zukauf)', 'Reitschule Morgenstern'];
+
+  function makeBreedingOrder(state, tier) {
+    const disc = Math.random() < 0.72 ? DISC[Model.randInt(0, DISC.length - 1)] : null;
+    const breed = Math.random() < 0.4 ? Names.BREED_KEYS[Model.randInt(0, Names.BREED_KEYS.length - 1)] : null;
+    const strict = clamp(0.45 + tier * 0.09 + Model.gauss(0, 0.08), 0.35, 0.95);
+    const minTalent = disc ? clamp(Math.round(52 + strict * 38), 40, 95) : 0;
+    const minConf = clamp(Math.round(48 + strict * 34), 40, 90);
+    const minHealth = clamp(Math.round(62 + strict * 22), 55, 92);
+    const wantRare = Math.random() < 0.22;
+    const sexReq = Math.random() < 0.25 ? (Math.random() < 0.5 ? 'hengst' : 'stute') : null;
+    const needPapers = Math.random() < 0.5;
+    const maxAge = Math.random() < 0.45 ? 3 : 12;   // "junges Pferd" vs. Alter egal
+    const weeks = [10, 14, 18, 24][Model.randInt(0, 3)];
+    let reward = 4000 + strict * 16000 + (disc ? minTalent * 90 : 0) + minConf * 70;
+    if (wantRare) reward += 6000;
+    if (needPapers) reward += 3500;
+    reward = Math.round(reward * prestigeMult(state) / 500) * 500;
+    return {
+      id: 'ord' + Math.random().toString(36).slice(2, 8),
+      client: ORDER_CLIENTS[Model.randInt(0, ORDER_CLIENTS.length - 1)],
+      breed: breed, disc: disc, minTalent: minTalent, minConf: minConf, minHealth: minHealth,
+      wantRare: wantRare, sexReq: sexReq, needPapers: needPapers, maxAge: maxAge,
+      reward: Math.max(3000, reward), prestige: 6 + Math.round(strict * 14),
+      createdWeek: state.week, deadlineWeek: state.week + weeks,
+    };
+  }
+  // Liste periodisch auf ein Ziel auffüllen (bestehende Aufträge behalten).
+  function rollBreedingOrders(state, keep) {
+    const tier = prestigeTier(state).stars;
+    const target = 2 + (tier >= 3 ? 1 : 0);
+    const out = (keep || []).slice();
+    let guard = 0;
+    while (out.length < target && guard++ < 20) out.push(makeBreedingOrder(state, tier));
+    return out;
+  }
+  // Prüft ein Pferd gegen einen Auftrag. { ok, reasons:[...] }.
+  function orderMatch(order, horse, currentWeek) {
+    const reasons = [];
+    const y = Model.ageYears(horse, currentWeek);
+    if (y > order.maxAge) reasons.push(order.maxAge < 12 ? 'nur junge Pferde (≤ ' + order.maxAge + ' J.)' : 'zu alt (≤ ' + order.maxAge + ' J.)');
+    if (order.breed && horse.breed !== order.breed) reasons.push('Rasse ' + order.breed + ' gefordert');
+    if (order.sexReq && horse.sex !== order.sexReq) reasons.push((order.sexReq === 'hengst' ? 'Hengst' : 'Stute') + ' gefordert');
+    if (order.disc && horse.potential[order.disc] < order.minTalent) reasons.push(order.disc + '-Potenzial ' + Math.round(horse.potential[order.disc]) + ' < ' + order.minTalent);
+    if (horse.conformation < order.minConf) reasons.push('Exterieur ' + Math.round(horse.conformation) + ' < ' + order.minConf);
+    if (horse.health < order.minHealth) reasons.push('Gesundheit ' + Math.round(horse.health) + ' < ' + order.minHealth);
+    if (order.needPapers && (horse.noPapers || horse.isMix || Model.isMixBreed(horse.breed))) reasons.push('mit Zuchtbucheintrag gefordert');
+    if (order.wantRare && Genetics.describe(horse.genotype, y).rarity < 0.25) reasons.push('besondere Fellfarbe gefordert');
+    return { ok: reasons.length === 0, reasons: reasons };
+  }
+  function orderSummary(order) {
+    const p = [order.breed || 'Rasse egal'];
+    if (order.sexReq) p.push(order.sexReq === 'hengst' ? 'Hengst' : 'Stute');
+    if (order.disc) p.push(order.disc + ' ≥ ' + order.minTalent);
+    p.push('Exterieur ≥ ' + order.minConf, 'Gesundheit ≥ ' + order.minHealth);
+    if (order.needPapers) p.push('Zuchtbucheintrag');
+    if (order.wantRare) p.push('Sonderfarbe');
+    p.push(order.maxAge < 12 ? 'max. ' + order.maxAge + ' J.' : 'Alter ≤ 12 J.');
+    return p.join(' · ');
+  }
+
   function fmtEur(v) {
     return (Math.round(v)).toLocaleString('de-DE') + ' €';
   }
@@ -779,6 +846,10 @@ const Economy = (function () {
     staffTrainBonus: staffTrainBonus,
     staffEventMult: staffEventMult,
     rollSponsorOffers: rollSponsorOffers,
+    rollBreedingOrders: rollBreedingOrders,
+    makeBreedingOrder: makeBreedingOrder,
+    orderMatch: orderMatch,
+    orderSummary: orderSummary,
     initDemand: initDemand,
     driftDemand: driftDemand,
     demandMultiplier: demandMultiplier,
