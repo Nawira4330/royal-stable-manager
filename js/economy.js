@@ -818,6 +818,30 @@ const Economy = (function () {
     return p.join(' · ');
   }
 
+  // --- Pensionsstall: freie Boxen an Gastpferde vermieten. Passives
+  //     Wocheneinkommen je Box, skaliert mit Rang und Pflegestufe. Belegte
+  //     Gastboxen zählen gegen die Stallkapazität.
+  function boardIncomePerBox(state) {
+    return Math.round(45 + state.prestige * 0.22 + (state.careLevel != null ? state.careLevel : 1) * 12 + prestigeTier(state).stars * 8);
+  }
+  function freeStallSlots(state) {
+    return Math.max(0, stallCapacity(state) - state.horses.length - (state.boarding || 0));
+  }
+
+  // --- Eigene Deckstation: einen gekörten/eingetragenen Hengst fremden
+  //     Zuchtstuten gegen Deckgeld anbieten. Erwartete Buchungen/Woche hängen
+  //     an Rang, Qualität, Zuchtzulassung und (invers) am gesetzten Deckgeld.
+  function studServiceBookings(state, horse) {
+    if (!horse.studService) return 0;
+    const rank = approvalRank(horse.zuchtzulassung);
+    if (rank < 2) return 0;
+    const val = Model.valuation(horse, state.week, prestigeMult(state));
+    const fair = Math.max(400, val * 0.05);
+    const attractiveness = clamp(fair / Math.max(horse.studService.fee, 1), 0.15, 1.7);
+    const base = 0.22 + prestigeTier(state).stars * 0.12 + (horse.quality - 0.4) * 0.5 + rank * 0.12;
+    return clamp(base * attractiveness, 0, 2.4);
+  }
+
   function fmtEur(v) {
     return (Math.round(v)).toLocaleString('de-DE') + ' €';
   }
@@ -850,6 +874,9 @@ const Economy = (function () {
     makeBreedingOrder: makeBreedingOrder,
     orderMatch: orderMatch,
     orderSummary: orderSummary,
+    boardIncomePerBox: boardIncomePerBox,
+    freeStallSlots: freeStallSlots,
+    studServiceBookings: studServiceBookings,
     initDemand: initDemand,
     driftDemand: driftDemand,
     demandMultiplier: demandMultiplier,

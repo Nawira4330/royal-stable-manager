@@ -44,7 +44,8 @@ auf dem Startbildschirm alle Regeln.
   Startauflage + Abschlussbonus), **Zuchtaufträge** (Verbände/Kunden suchen
   Pferde nach Vorgabe: Prämie + Prestige, verfallene Aufträge kosten Prestige),
   **Zuchtbuch/Zuchtstempel** (Präfix wird eigenen Nachzuchten vorangestellt),
-  Chronik.
+  **Pensionsstall** (freie Boxen an Gastpferde vermieten – passives
+  Wocheneinkommen, belegt echte Stallplätze), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
   vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
   Gesundheit (5 Einzelnoten: Fundament & Sehnen, Atemwege, Herz-Kreislauf,
@@ -59,6 +60,9 @@ auf dem Startbildschirm alle Regeln.
   Winter −). Bei der Geburt drohen je nach Alter, Gesundheit und COI der Stute
   **Verfohlen, Schwergeburt** (Tierarztrechnung, schwächeres Fohlen) oder – sehr
   selten – der Verlust der Stute; die Tierarzt-Anlage senkt das Risiko stark.
+  Umgekehrt lässt sich ein **eigener gekörter Hengst** in der Stall-Detailansicht
+  fremden Zuchtstuten anbieten: du setzt das Deckgeld, wöchentlich buchen einige
+  Stuten (Einnahme minus 8 % Vermittlung), ohne Fohlen im eigenen Stall.
 - **🏆 Schauen** – je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen)
   mit Mindestanforderung, Jungpferde-Prüfungen, Nenn-/Reisekosten,
   Energieverbrauch. Dazu **Zuchtschauen** und **Körungen/Prämierungen**

@@ -70,6 +70,7 @@ const Game = (function () {
       nextSponsorWeek: 8,
       breedingOrders: [],
       nextOrderWeek: 5,
+      boarding: 0,
       lastSeasonIdx: -1,
       rivals: [],
       seasonYear: 1,
@@ -125,6 +126,7 @@ const Game = (function () {
     if (state.nextOrderWeek == null) state.nextOrderWeek = state.week + 5;
     if (state.studPrefix == null) state.studPrefix = derivePrefix(state.studName);
     if (state.prefixOn == null) state.prefixOn = true;
+    if (state.boarding == null) state.boarding = 0;
     if (state.lastSeasonIdx == null) state.lastSeasonIdx = Economy.season(state.week).idx;
     if (!state.stats) state.stats = {};
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
@@ -185,7 +187,7 @@ const Game = (function () {
     if (fr) return { horse: fr.horse, external: true, fee: fr.studFee, friend: fr.friend };
     return null;
   }
-  function stallFree() { return Economy.stallCapacity(state) - state.horses.length; }
+  function stallFree() { return Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0); }
   // "Fairer" Schätzwert (ohne Tagesnachfrage).
   function valuation(h) { return Model.valuation(h, state.week, Economy.prestigeMult(state)); }
   // Was der Markt gerade zahlt (Schätzwert × aktuelle Nachfrage im Segment).
@@ -274,6 +276,39 @@ const Game = (function () {
     return { ok: true };
   }
   function setPrefixOn(on) { state.prefixOn = !!on; save(); emit(); return { ok: true }; }
+
+  // --- Pensionsstall: Anzahl vermieteter Gastboxen setzen (max. freie Plätze).
+  function setBoarding(n) {
+    n = Math.max(0, Math.round(n || 0));
+    const room = Economy.stallCapacity(state) - state.horses.length;
+    n = Math.min(n, Math.max(0, room));
+    state.boarding = n;
+    log('🏨 Pensionsstall: ' + n + ' Gastbox' + (n === 1 ? '' : 'en') + ' vermietet (' + Economy.fmtEur(Economy.boardIncomePerBox(state)) + '/Box/Wo.).', 'info');
+    save(); emit();
+    return { ok: true };
+  }
+
+  // --- Eigene Deckstation: eigenen Hengst fremden Zuchtstuten anbieten.
+  function offerStudService(horseId, fee) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.sex !== 'hengst') return { ok: false, msg: h.name + ' ist kein Hengst.' };
+    if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung.' };
+    if (Model.approvalRank(h.zuchtzulassung) < 2) return { ok: false, msg: h.name + ' ist nicht gekört/eingetragen — keine Nachfrage von Zuchtstuten.' };
+    fee = Math.max(100, Math.round(fee || 0));
+    const prev = h.studService || { bookings: 0, income: 0 };
+    h.studService = { fee: fee, bookings: prev.bookings || 0, income: prev.income || 0 };
+    log(h.name + ' wird als Deckhengst für fremde Zuchtstuten angeboten (Deckgeld ' + Economy.fmtEur(fee) + ').', 'info');
+    save(); emit();
+    return { ok: true };
+  }
+  function stopStudService(horseId) {
+    const h = getHorse(horseId);
+    if (h && h.studService) { delete h.studService; log(h.name + ' steht fremden Zuchtstuten nicht mehr zur Verfügung.', 'info'); }
+    save(); emit();
+    return { ok: true };
+  }
+
   function foalName() {
     const base = Names.randName();
     return (state.prefixOn && state.studPrefix) ? state.studPrefix + ' ' + base : base;
@@ -1114,6 +1149,35 @@ const Game = (function () {
     });
     state.sponsors = stillActive;
 
+    // Pensionsstall: Wocheneinnahme je Gastbox (belegt echte Stallplätze).
+    if (state.boarding > 0) {
+      const bi = state.boarding * Economy.boardIncomePerBox(state);
+      state.cash += bi;
+      log('🏨 Pensionsstall: +' + Economy.fmtEur(bi) + ' (' + state.boarding + ' Gastbox' + (state.boarding === 1 ? '' : 'en') + ').', 'good');
+      if (Math.random() < 0.06) {
+        const bill = 200 + Model.randInt(0, 500);
+        state.cash -= bill;
+        log('🏨 Ein Pensionspferd wurde krank — Tierarzt/Kulanz -' + Economy.fmtEur(bill) + '.', 'cost');
+      }
+    }
+
+    // Eigene Deckstation: fremde Zuchtstuten buchen angebotene Hengste.
+    state.horses.forEach((h) => {
+      if (!h.studService || Model.approvalRank(h.zuchtzulassung) < 2) return;
+      let lam = Economy.studServiceBookings(state, h);
+      let n = 0;
+      while (lam > 0) { if (Math.random() < Math.min(lam, 1)) n++; lam -= 1; }
+      if (n <= 0) return;
+      const net = Math.round(n * h.studService.fee * 0.92);   // 8 % Vermittlung
+      state.cash += net;
+      state.stats.totalEarnings += net;
+      h.studService.bookings = (h.studService.bookings || 0) + n;
+      h.studService.income = (h.studService.income || 0) + net;
+      h.energy = clamp(h.energy - n * 4, 0, 100);
+      state.prestige += n * 0.4;
+      log('🐴 Deckstation: ' + h.name + ' hat ' + n + ' fremde Stute' + (n === 1 ? '' : 'n') + ' gedeckt — +' + Economy.fmtEur(net) + '.', 'good');
+    });
+
     // Rivalen-Gestüte entwickeln sich; am Jahresende das Championat.
     Economy.advanceRivals(state);
     if (state.week > 0 && state.week % Model.WEEKS_PER_YEAR === 0) {
@@ -1319,6 +1383,10 @@ const Game = (function () {
         text: 'Zuchtauftrag ' + o.client + ' läuft in ' + left + ' Woche' + (left === 1 ? '' : 'n') + ' aus' });
     });
 
+    const freeSlots = Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0);
+    if (freeSlots >= 3 && !(state.boarding > 0)) t.push({ icon: '🏨', tab: 'gestüt', kind: 'info',
+      text: freeSlots + ' freie Stallplätze — Pensionsstall bringt passives Wocheneinkommen' });
+
     const unconfirmed = (state.friendStuds || []).filter((x) => x.pendingSettle);
     unconfirmed.forEach((x) => t.push({ icon: '🧾', tab: 'gestüt', kind: (state.week - x.pendingSettle.sentWeek > 8 ? 'warn' : 'info'),
       text: 'Decktaxe-Abrechnung für ' + x.horse.name + ' (' + Economy.fmtEur(x.pendingSettle.amount) + ') an ' + x.friend + ' — noch nicht bestätigt' }));
@@ -1355,6 +1423,9 @@ const Game = (function () {
     dropSponsor: dropSponsor,
     setStudPrefix: setStudPrefix,
     setPrefixOn: setPrefixOn,
+    setBoarding: setBoarding,
+    offerStudService: offerStudService,
+    stopStudService: stopStudService,
     fulfillBreedingOrder: fulfillBreedingOrder,
     createOffer: createOffer,
     cancelOffer: cancelOffer,

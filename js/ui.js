@@ -188,9 +188,10 @@ const UI = (function () {
         ${staffCard(s)}
         ${sponsorCard(s)}
       </div>
-      <div class="grid cols-2" style="margin-top:1rem">
+      <div class="grid cols-3" style="margin-top:1rem">
         ${breedingOrderCard(s)}
         ${zuchtbuchCard(s)}
+        ${boardingCard(s)}
       </div>
 
       <div class="card" style="margin-top:1rem">
@@ -375,6 +376,43 @@ const UI = (function () {
       <div class="row between"><span>Bestes eigenes Pferd</span><b>${best ? esc(best.name) + ' — ' + fmt(Game.valuation(best)) : '—'}</b></div>
       <div class="row between"><span>Gezüchtete Fohlen gesamt</span><b>${s.stats.foalsBred || 0}</b></div>
     </div>`;
+  }
+
+  function boardingCard(s) {
+    const perBox = Economy.boardIncomePerBox(s);
+    const room = Economy.stallCapacity(s) - s.horses.length;
+    const cur = s.boarding || 0;
+    return `<div class="card stack">
+      <h3>🏨 Pensionsstall</h3>
+      <p class="small muted">Freie Boxen an Gastpferde vermieten — passives Einkommen je Box/Woche.
+      Gastboxen belegen echte Stallplätze; für eigene Zukäufe erst wieder reduzieren.</p>
+      <div class="row between"><span>Einnahme je Box/Woche</span><b>${fmt(perBox)}</b></div>
+      <div class="row between"><span>Aktuell vermietet</span><b>${cur}</b></div>
+      <div class="row between"><span>Belegbare Boxen</span><b>${Math.max(0, room)}</b></div>
+      <div class="row" style="margin-top:.3rem">
+        <input type="number" id="boarding-input" class="bid-input" value="${cur}" min="0" max="${Math.max(0, room)}" step="1">
+        <button class="small" data-action="set-boarding">übernehmen</button>
+      </div>
+      ${cur > 0 ? `<div class="small">Erwartete Wocheneinnahme: <b>${fmt(cur * perBox)}</b></div>` : ''}
+    </div>`;
+  }
+
+  // Block in der Pferde-Detailansicht: eigenen Hengst fremden Zuchtstuten anbieten.
+  function studServiceBlock(h) {
+    const s = Game.state;
+    if (h.studService) {
+      const exp = Economy.studServiceBookings(s, h);
+      return '<div class="card" style="background:var(--surface-2)">' +
+        '<div class="row between"><b class="small">🐴 Eigene Deckstation aktiv</b>' +
+        '<button class="small danger" data-action="stop-stud-service" data-id="' + h.id + '">beenden</button></div>' +
+        '<div class="small muted">Deckgeld ' + fmt(h.studService.fee) + ' · ~' + exp.toFixed(1) + ' Buchungen/Wo. · bisher ' +
+        (h.studService.bookings || 0) + ' Bedeckungen, ' + fmt(h.studService.income || 0) + ' eingenommen</div>' +
+        '<div class="row" style="margin-top:.35rem"><input type="number" class="bid-input" id="stud-fee-' + h.id + '" value="' + h.studService.fee + '" step="100">' +
+        '<button class="small secondary" data-action="set-stud-fee" data-id="' + h.id + '">Deckgeld ändern</button></div></div>';
+    }
+    const suggested = Math.max(400, Math.round(Game.valuation(h) * 0.05 / 50) * 50);
+    return '<div class="row"><input type="number" class="bid-input" id="stud-fee-' + h.id + '" placeholder="Deckgeld €" value="' + suggested + '" step="100">' +
+      '<button class="small secondary" data-action="offer-stud-service" data-id="' + h.id + '">🐴 Für fremde Zuchtstuten anbieten (Deckgeld)</button></div>';
   }
 
   function friendPending(s) {
@@ -636,6 +674,8 @@ const UI = (function () {
           <button class="small secondary" data-action="offer-horse" data-id="${h.id}">👥 An Freund verkaufen (Code)</button>
           ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="share-stud" data-id="' + h.id + '">👥 Deckhengst freigeben (Code)</button>' : ''}
         </div>
+        ${h.sex === 'hengst' && adult && (Model.approvalRank(h.zuchtzulassung) >= 2 || h.studService) ? studServiceBlock(h)
+          : (h.sex === 'hengst' && adult ? '<div class="small muted">🐴 Eigene Deckstation für fremde Zuchtstuten: erst nach Körung/Eintragung möglich.</div>' : '')}
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
@@ -1222,6 +1262,19 @@ const UI = (function () {
       return;
     }
     if (a === 'toggle-prefix') { Game.setPrefixOn(el.checked); return; }
+    if (a === 'set-boarding') {
+      const inp = document.getElementById('boarding-input');
+      const r = Game.setBoarding(inp ? parseInt(inp.value, 10) : 0);
+      if (r.ok) toast('Pensionsstall aktualisiert.');
+      return;
+    }
+    if (a === 'offer-stud-service' || a === 'set-stud-fee') {
+      const inp = document.getElementById('stud-fee-' + el.dataset.id);
+      const r = Game.offerStudService(el.dataset.id, inp ? parseInt(inp.value, 10) : 0);
+      toast(r.ok ? 'Deckhengst angeboten.' : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'stop-stud-service') { Game.stopStudService(el.dataset.id); return; }
     if (a === 'drop-sponsor') {
       if (confirm('Sponsorenvertrag vorzeitig beenden? (kein Bonus, kleiner Prestige-Verlust)')) Game.dropSponsor(el.dataset.id);
       return;
