@@ -75,6 +75,7 @@ const Game = (function () {
       rivals: [],
       seasonYear: 1,
       championHistory: [],
+      jungChampHistory: [],
       stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0, bestSale: null, biggestWin: 0 },
     };
 
@@ -112,6 +113,7 @@ const Game = (function () {
     if (!Array.isArray(state.rivals) || !state.rivals.length) state.rivals = Economy.initRivals(state);
     if (state.seasonYear == null) state.seasonYear = 1;
     if (!Array.isArray(state.championHistory)) state.championHistory = [];
+    if (!Array.isArray(state.jungChampHistory)) state.jungChampHistory = [];
     if (state.debt == null) state.debt = 0;
     if (state.nextFarrierWeek == null) state.nextFarrierWeek = state.week + 2;
     if (state.nextVetRoutineWeek == null) state.nextVetRoutineWeek = state.week + 4;
@@ -1261,6 +1263,14 @@ const Game = (function () {
     // Rivalen-Gestüte entwickeln sich; am Jahresende das Championat.
     Economy.advanceRivals(state);
     if (state.week > 0 && state.week % Model.WEEKS_PER_YEAR === 0) {
+      const jcs = Economy.runJungChampionship(state);
+      const jWins = Model.DISC.filter((d) => jcs.disciplines[d]);
+      if (jWins.length) {
+        state.stats.totalEarnings += jcs.playerPrize;
+        log('🐴🏆 BUNDESCHAMPIONAT DER JUNGPFERDE ' + jcs.year + ' — ' +
+          jWins.map((d) => d + ': ' + jcs.disciplines[d]).join(' · ') +
+          '. Preisgeld ' + Economy.fmtEur(jcs.playerPrize) + ', +' + Math.round(jcs.playerPrestige) + ' Prestige.', 'good');
+      }
       const cs = Economy.runChampionship(state);
       state.stats.totalEarnings += cs.playerPrize;
       log('🏆 JAHRES-CHAMPIONAT ' + cs.year + ' — Gestüts-Champion: ' + (cs.overall || '—') +
@@ -1454,6 +1464,10 @@ const Game = (function () {
       const nQual = Object.keys(q).reduce((n, d) => n + (q[d].length ? 1 : 0), 0);
       t.push({ icon: '🏆', tab: 'schauen', kind: 'info',
         text: 'Jahres-Championat in ' + champIn + ' Woche' + (champIn > 1 ? 'n' : '') + ' — in ' + nQual + ' Disziplin(en) qualifiziert' });
+      const jq = Economy.jungChampionshipQualified(state);
+      const nJ = Object.keys(jq).reduce((n, d) => n + (jq[d].length ? 1 : 0), 0);
+      if (nJ) t.push({ icon: '🐴', tab: 'schauen', kind: 'info',
+        text: 'Bundeschampionat der Jungpferde in ' + champIn + ' Woche' + (champIn > 1 ? 'n' : '') + ' — in ' + nJ + ' Disziplin(en) qualifiziert' });
     }
     (state.breedingOrders || []).forEach((o) => {
       const left = o.deadlineWeek - state.week;

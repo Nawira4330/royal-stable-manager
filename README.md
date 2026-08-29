@@ -78,8 +78,10 @@ auf dem Startbildschirm alle Regeln.
   **Leistungsprüfung** (Stationsprüfung, Leistungsindex, Voraussetzung fürs
   Zuchtbuch I). **Rivalen-Gestüte** treten überall mit an; **Gestüts-Rangliste**
   und ein **Jahres-Championat** (52 Wochen, Finale je Disziplin + Gesamt-Titel,
-  danach Saisonpunkt-Reset). Fohlen von nicht gekörten Hengsten bekommen
-  **keinen Zuchtbucheintrag** (−38 % Wert).
+  danach Saisonpunkt-Reset) sowie das **Bundeschampionat der Jungpferde**
+  (3–6-jährige: Jungpferde-Prüfungen sammeln eigene Punkte, Jahresend-Finale
+  nach Potenzial/Typ/Rittigkeit, Titel „Bundeschampion <Disziplin>"). Fohlen
+  von nicht gekörten Hengsten bekommen **keinen Zuchtbucheintrag** (−38 % Wert).
 - **🔨 Auktion** – gegen KI bieten, eigene Pferde mit Limit einliefern.
 - **🛒 Markt** – kaufen und verkaufen. **Angebot & Nachfrage**: Preise und
   Verkaufstempo folgen der Nachfrage je Segment (Rasse + beste Disziplin +

@@ -558,6 +558,17 @@ const Economy = (function () {
     if (show.type === 'sport') {
       const d = show.discipline;
       const fit = (disciplineFit(horse, d) - 60) * 0.16;   // passende Einzelnoten
+      if (show.jung) {
+        // Jungpferde-Wertung: Potenzial, Typ, Rittigkeit/Gangqualität — nicht die
+        // (noch geringe) aktuelle Ausbildung.
+        const inr = Model.interieurOf(horse);
+        const rideab = (inr['Rittigkeit'] + inr['Lernwille'] + inr['Nervenstärke']) / 3;
+        return horse.potential[d] * 0.5
+          + horse.conformation * 0.22
+          + (rideab - 55) * 0.35
+          + fit * 0.9 + tempBonus + healthBonus * 0.4
+          + form * 0.16;
+      }
       return horse.skill[d] * 0.68 * af
         + horse.conformation * 0.1
         + fit + tempBonus + healthBonus
@@ -683,7 +694,10 @@ const Economy = (function () {
         if (place === 1) { h.wins += 1; prestigeGain += 6 + show.level * 4; }
         else if (place <= 3) prestigeGain += 3 + show.level * 2;
         else if (place <= 5) prestigeGain += 1 + show.level;
-        if (!show.champ && show.type === 'sport' && pts) { h.turnierPunkte = h.turnierPunkte || {}; h.turnierPunkte[key] = (h.turnierPunkte[key] || 0) + pts; }
+        if (!show.champ && show.type === 'sport' && pts) {
+          h.turnierPunkte = h.turnierPunkte || {}; h.turnierPunkte[key] = (h.turnierPunkte[key] || 0) + pts;
+          if (show.youngster) { h.jungPunkte = h.jungPunkte || {}; h.jungPunkte[key] = (h.jungPunkte[key] || 0) + pts; }
+        }
         h.showLog.unshift({ week: state.week, show: show.name, place: place, field: field.length, prize: prize, scoreLabel: results[results.length - 1].scoreLabel });
         if (h.showLog.length > 12) h.showLog.pop();
         if (show.type === 'sport') h.skill[show.discipline] = clamp(h.skill[show.discipline] + (place <= 3 ? 1.2 : 0.5), 0, h.potential[show.discipline]);
@@ -713,6 +727,11 @@ const Economy = (function () {
             results[results.length - 1].note = (results[results.length - 1].note ? results[results.length - 1].note + ' · ' : '') + pr;
           }
           if (place === 1) h.titel = h.sex === 'hengst' ? 'Siegerhengst' : 'Siegerstute';
+        }
+        // Bundeschampionat der Jungpferde: Siegertitel.
+        if (show.jung && place === 1) {
+          h.titel = 'Bundeschampion ' + show.discipline + ' ' + (show.year || '');
+          results[results.length - 1].note = h.titel;
         }
       } else if (f.rival) {
         if (pts) f.rival.seasonPoints = (f.rival.seasonPoints || 0) + pts;
@@ -772,6 +791,46 @@ const Economy = (function () {
     state.horses.forEach((h) => { h.turnierPunkte = {}; });
     (state.rivals || []).forEach((rv) => { rv.seasonPoints = 0; });
     state.seasonYear = year + 1;
+    return summary;
+  }
+
+  // --- Bundeschampionat der Jungpferde (3–6 Jahre): eigene Saisonwertung
+  //     aus den Jungpferde-Prüfungen. Am Jahresende ein Finale je Disziplin,
+  //     bewertet nach Potenzial/Typ/Rittigkeit statt aktueller Ausbildung.
+  const JUNGCHAMP_QUAL = 12, JUNGCHAMP_MAX_AGE = 6;
+  function jungChampionshipQualified(state) {
+    const out = {};
+    DISC.forEach((d) => {
+      out[d] = (state.horses || []).filter((h) => h.jungPunkte && (h.jungPunkte[d] || 0) >= JUNGCHAMP_QUAL &&
+        Model.ageYears(h, state.week) <= JUNGCHAMP_MAX_AGE);
+    });
+    return out;
+  }
+  function runJungChampionship(state) {
+    const year = state.seasonYear || 1;   // vor runChampionship aufrufen (dort wird seasonYear erhöht)
+    const qual = jungChampionshipQualified(state);
+    const summary = { year: year, disciplines: {}, results: {}, playerPrize: 0, playerPrestige: 0 };
+    DISC.forEach((d) => {
+      const qs = qual[d];
+      if (!qs.length) { summary.disciplines[d] = null; return; }
+      const show = {
+        id: 'jchamp_' + d, type: 'sport', discipline: d, level: 4, champ: true, jung: true, year: year,
+        name: 'Bundeschampionat der Jungpferde — ' + d + ' (Jahr ' + year + ')', prizePool: 42000,
+        entryFee: 0, travelCost: 0, energyCost: 12, minSkill: 0, minConf: 0, minEnergy: 0, minHealth: 0,
+        fieldStrength: 62, entered: qs.map((h) => h.id), done: false,
+      };
+      const r = runShow(state, show);
+      summary.disciplines[d] = r.results[0] ? r.results[0].name : null;
+      summary.results[d] = r.results.slice(0, 8);
+      summary.playerPrize += r.totalPrize;
+      summary.playerPrestige += r.prestigeGain;
+      state.cash += r.totalPrize;
+      state.prestige += r.prestigeGain;
+    });
+    state.jungChampHistory = state.jungChampHistory || [];
+    state.jungChampHistory.unshift({ year: year, disciplines: summary.disciplines });
+    if (state.jungChampHistory.length > 10) state.jungChampHistory.pop();
+    state.horses.forEach((h) => { h.jungPunkte = {}; });
     return summary;
   }
 
@@ -967,6 +1026,10 @@ const Economy = (function () {
     championshipQualified: championshipQualified,
     runChampionship: runChampionship,
     CHAMP_QUAL: CHAMP_QUAL,
+    JUNGCHAMP_QUAL: JUNGCHAMP_QUAL,
+    JUNGCHAMP_MAX_AGE: JUNGCHAMP_MAX_AGE,
+    jungChampionshipQualified: jungChampionshipQualified,
+    runJungChampionship: runJungChampionship,
     fmtEur: fmtEur,
   };
 })();

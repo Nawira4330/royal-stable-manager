@@ -120,6 +120,7 @@ const Model = (function () {
     if (h.foalsBred === undefined) h.foalsBred = 0;
     if (h.foalQualSum === undefined) h.foalQualSum = 0;
     if (h.genoTested === undefined) h.genoTested = true;   // Altbestand gilt als getestet
+    if (h.jungPunkte === undefined) h.jungPunkte = {};
     return h;
   }
 

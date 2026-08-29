@@ -623,9 +623,13 @@ const UI = (function () {
       ? '<div class="small muted">' + plan.filter((d) => d).length + ' Einheiten, ' + restSlots + ' Ruhetage. Jede Einheit kostet ~12 Energie, Ruhetage geben +5 zurück. Zu wenig Energie → Einheiten fallen aus.</div>'
       : '<div class="small muted">Kein Training geplant — das Pferd erholt sich nur.</div>';
 
-    const pts = h.turnierPunkte && Object.keys(h.turnierPunkte).length
+    const pts = (h.turnierPunkte && Object.keys(h.turnierPunkte).length
       ? '<div class="small">Saisonpunkte: ' + Object.keys(h.turnierPunkte).map((k) => esc(k) + ' ' + h.turnierPunkte[k]).join(' · ') + '</div>'
-      : '';
+      : '') +
+      (h.jungPunkte && Object.keys(h.jungPunkte).length
+        ? '<div class="small">Jungpferde-Punkte: ' + Object.keys(h.jungPunkte).map((k) => esc(k) + ' ' + h.jungPunkte[k] +
+          (h.jungPunkte[k] >= Economy.JUNGCHAMP_QUAL && ageYears(h) <= Economy.JUNGCHAMP_MAX_AGE ? ' ✓' : '')).join(' · ') + '</div>'
+        : '');
 
     const parents = (h.sireName || h.damName)
       ? '<div class="small muted">Abstammung: ' + esc(h.sireName || '?') + ' × ' + esc(h.damName || '?') + '</div>'
@@ -1103,6 +1107,30 @@ const UI = (function () {
       '<details><summary class="small"><b>Jahr ' + c.year + ' — Gesamt-Champion: ' + esc(c.overall || '—') + '</b></summary>' +
       '<div class="small">' + DISC.map((d) => d + ': ' + esc(c.disciplines[d] || '—')).join(' · ') + '</div></details>').join('');
 
+    // Bundeschampionat der Jungpferde: laufende Qualifikation + Historie.
+    const jq = Economy.jungChampionshipQualified(s);
+    const jStandings = DISC.map((disc) => {
+      const ranked = s.horses
+        .filter((h) => h.jungPunkte && h.jungPunkte[disc] && ageYears(h) <= Economy.JUNGCHAMP_MAX_AGE)
+        .sort((a, b) => b.jungPunkte[disc] - a.jungPunkte[disc]).slice(0, 3);
+      if (!ranked.length) return '';
+      return '<div class="small"><b>' + esc(disc) + ':</b> ' + ranked.map((h, i) => (i + 1) + '. ' + esc(h.name) +
+        ' (' + h.jungPunkte[disc] + (h.jungPunkte[disc] >= Economy.JUNGCHAMP_QUAL ? ' <span class="tag good">✓ qualifiziert</span>' : '') + ')').join(' · ') + '</div>';
+    }).filter(Boolean).join('');
+    const jHist = (s.jungChampHistory || []).map((c) =>
+      '<details><summary class="small"><b>Jahr ' + c.year + '</b></summary><div class="small">' +
+      DISC.map((d) => d + ': ' + esc(c.disciplines[d] || '—')).join(' · ') + '</div></details>').join('');
+    const jungCard = (jStandings || jHist)
+      ? `<div class="card" style="margin-top:1rem">
+          <h3>🐴 Bundeschampionat der Jungpferde</h3>
+          <p class="small muted">Für 3–6-jährige Pferde. Jungpferde-Prüfungen sammeln eigene Punkte; ab
+          ${Economy.JUNGCHAMP_QUAL} Punkten je Disziplin ist ein Pferd fürs Jahresend-Finale qualifiziert
+          (Wertung nach Potenzial, Typ und Rittigkeit, nicht nach aktueller Ausbildung).</p>
+          ${jStandings ? '<div style="margin-bottom:.4rem">' + jStandings + '</div>' : '<p class="small muted">Noch keine Jungpferde-Punkte in dieser Saison.</p>'}
+          ${jHist ? '<b class="small">Historie</b>' + jHist : ''}
+        </div>`
+      : '';
+
     return `
       <div class="card">
         <h3>Schaukalender</h3>
@@ -1114,6 +1142,7 @@ const UI = (function () {
       ${recent ? '<div class="card" style="margin-top:1rem"><h3>📋 Letzte Ergebnisse</h3>' + recent + '</div>' : ''}
       ${rankCard}
       ${standings ? '<div class="card" style="margin-top:1rem"><h3>🏅 Deine Pferde je Disziplin</h3>' + standings + '</div>' : ''}
+      ${jungCard}
       ${hist ? '<div class="card" style="margin-top:1rem"><h3>🏆 Championat-Historie</h3>' + hist + '</div>' : ''}`;
   };
 
