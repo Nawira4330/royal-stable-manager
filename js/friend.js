@@ -92,13 +92,18 @@ const Friend = (function () {
   function encodeStud(h, fee, fromCode, week) {
     return pack('SD', { v: 2, from: fromCode, fee: Math.max(0, Math.round(fee)), horse: packHorse(h, week) });
   }
+  // Decktaxe-Abrechnung: der Nutzer des Freundes-Hengstes zahlt die
+  // gesammelten Deckgebühren an den Besitzer aus.
+  function encodePayout(ownerCode, payerCode, amount, count, studName, payId) {
+    return pack('PY', { v: 2, id: payId, from: payerCode, to: ownerCode, amount: Math.max(0, Math.round(amount)), count: count || 0, stud: studName || '' });
+  }
 
-  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot' };
+  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung' };
 
   // --- Decoder: prüft Form + Prüfsumme, wirft bei Murks ---------------
   function decode(str) {
     const s = (str || '').trim().replace(/\s+/g, '');
-    const m = s.match(/^HRV2\.(OF|BD|DL|SD)\.([a-z0-9]{1,8})\.(.+)$/i);
+    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY)\.([a-z0-9]{1,8})\.(.+)$/i);
     if (!m) throw new Error('Das ist kein gültiger Tauschcode.');
     const type = m[1].toUpperCase();
     if (sig(m[3]) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
@@ -107,7 +112,8 @@ const Friend = (function () {
     const out = { type: type, typeLabel: TYPE_LABEL[type], hash: sig(m[3]),
       id: p.id || null, from: p.from || '???', to: p.to || null,
       seller: p.seller || null, public: !!p.public,
-      price: p.price || 0, fee: p.fee || 0, horse: p.horse || null };
+      price: p.price || 0, fee: p.fee || 0, amount: p.amount || 0, count: p.count || 0,
+      stud: p.stud || '', horse: p.horse || null };
     if ((type === 'OF' || type === 'DL' || type === 'SD') && (!out.horse || !out.horse.genotype)) {
       throw new Error('Im Code fehlen Pferdedaten.');
     }
@@ -121,6 +127,7 @@ const Friend = (function () {
     encodeBid: encodeBid,
     encodeDelivery: encodeDelivery,
     encodeStud: encodeStud,
+    encodePayout: encodePayout,
     decode: decode,
   };
 })();

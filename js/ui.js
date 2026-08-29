@@ -241,10 +241,16 @@ const UI = (function () {
     const purch = (s.pendingPurchases || []).map((q) =>
       '<div>⏳ Kaufgebot für „' + esc(q.horseName) + '" (' + fmt(q.price) + ') an ' + esc(q.seller) + ' — wartet auf Lieferung</div>'
     ).join('');
-    if (!offers && !purch) return '';
+    const debts = (s.friendStuds || []).filter((x) => x.owed > 0).map((x) =>
+      '<div class="row between"><span>💶 Decktaxe für ' + esc(x.horse.name) + ' (Besitzer ' + esc(x.friend) + '): <b>' +
+      fmt(x.owed) + '</b> aus ' + (x.owedCount || 0) + ' Bedeckungen</span>' +
+      '<button class="small" data-action="settle-stud" data-id="' + x.horse.id + '">Abrechnungs-Code erstellen</button></div>'
+    ).join('');
+    if (!offers && !purch && !debts) return '';
     return '<div class="trade-list" style="margin-top:.6rem">' +
       (offers ? '<div class="small muted">Deine offenen Verkaufsangebote:</div>' + offers : '') +
-      (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') + '</div>';
+      (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') +
+      (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen an Freunde:</div>' + debts : '') + '</div>';
   }
 
   function herdMiniTable() {
@@ -942,6 +948,14 @@ const UI = (function () {
         Friend.encodeOffer(h, o.price, Game.state.friendCode, o.to, o.id, Game.state.week));
       return;
     }
+    if (a === 'settle-stud') {
+      const r = Game.settleFriendStud(el.dataset.id);
+      if (!r.ok) { toast(r.msg, true); return; }
+      UI.showCode('Decktaxe-Abrechnung',
+        'Schick diesen Code an den Hengst-Besitzer. Er nimmt ihn an und bekommt das Deckgeld gutgeschrieben.', r.code);
+      render();
+      return;
+    }
     if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
 
     if (a === 'rename-horse') {
@@ -1096,6 +1110,7 @@ const UI = (function () {
       sell: 'An ' + p.from + ' verkaufen (' + fmt(p.price) + ')',
       receive: 'Übernehmen & ' + fmt(p.price) + ' zahlen',
       stud: 'Deckhengst übernehmen',
+      payout: 'Decktaxe annehmen (' + fmt(p.amount) + ')',
     }[p.action];
     $('#trade-actions').innerHTML =
       '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
@@ -1114,7 +1129,9 @@ const UI = (function () {
     else if (act === 'sell') r = Game.acceptBid(tradeRaw);
     else if (act === 'receive') r = Game.acceptDelivery(tradeRaw);
     else if (act === 'stud') r = Game.acceptStud(tradeRaw);
+    else if (act === 'payout') r = Game.acceptPayout(tradeRaw);
     if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
+    if (act === 'payout') { toast('Decktaxe ' + fmt(r.amount) + ' erhalten.'); render(); return; }
     if (r.code) {
       const hints = {
         bid: 'Schick dieses Kaufgebot zurück an den Verkäufer. Bei Zuschlag bekommst du eine Lieferung.',

@@ -68,7 +68,9 @@ auf dem Startbildschirm alle Regeln.
     Kaufgebot an (wer zuerst bietet). 4-Schritt-Ablauf mit Angebot → Kaufgebot →
     Verkaufen/Lieferung → Übernehmen; Geld fließt erst am Ende.
   - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
-    dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir.
+    dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
+    Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**
+    die Summe, die du gutgeschrieben bekommst.
   Das Spiel macht **keine Netzwerkanfragen**.
 
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel

@@ -304,6 +304,12 @@ const Game = (function () {
       return { ok: true, action: 'receive', kind: 'Lieferung', from: d.from, price: d.price, horse: d.horse,
         warn: state.cash < d.price ? 'Nicht genug Geld (' + Economy.fmtEur(d.price) + ').' : (stallFree() < 1 ? 'Kein freier Stallplatz.' : null) };
     }
+    if (d.type === 'PY') {
+      if (d.to && d.to !== mine) return { ok: false, msg: 'Diese Abrechnung ist an ' + d.to + ' gerichtet.' };
+      if (already) return { ok: false, msg: 'Diese Decktaxe-Abrechnung hast du schon angenommen.' };
+      return { ok: true, action: 'payout', kind: 'Decktaxe-Abrechnung', from: d.from, amount: d.amount, count: d.count,
+        text: d.from + ' zahlt dir ' + Economy.fmtEur(d.amount) + ' Decktaxe für ' + (d.stud || 'deinen Hengst') + ' (' + d.count + ' Bedeckungen).' };
+    }
     // SD Deckhengst
     if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
     if (already) return { ok: false, msg: 'Diesen Deckhengst hast du schon übernommen.' };
@@ -393,6 +399,28 @@ const Game = (function () {
     state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
     save(); emit();
   }
+  // Nutzer eines Freundes-Hengstes: offene Decktaxe an den Besitzer auszahlen.
+  function settleFriendStud(studHorseId) {
+    const x = (state.friendStuds || []).find((e) => e.horse.id === studHorseId);
+    if (!x || !(x.owed > 0)) return { ok: false, msg: 'Nichts abzurechnen.' };
+    const code = Friend.encodePayout(x.friend, state.friendCode, x.owed, x.owedCount || 0, x.horse.name, Friend.newOfferId());
+    log('Decktaxe-Abrechnung erstellt: ' + Economy.fmtEur(x.owed) + ' an ' + x.friend + ' für ' + x.horse.name + '. Code schicken.', 'info');
+    x.owed = 0; x.owedCount = 0;
+    save(); emit();
+    return { ok: true, code: code };
+  }
+  // Hengst-Besitzer: Decktaxe-Abrechnung annehmen -> Geld gutschreiben.
+  function acceptPayout(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'payout') return { ok: false, msg: p.msg || 'Keine gültige Abrechnung.' };
+    const d = Friend.decode(text);
+    state.cash += d.amount;
+    state.stats.totalEarnings += d.amount;
+    markRedeemed(d.hash);
+    log('Decktaxe erhalten: ' + Economy.fmtEur(d.amount) + ' von ' + d.from + ' (' + d.count + ' Bedeckungen).', 'good');
+    save(); emit();
+    return { ok: true, amount: d.amount };
+  }
 
   function removeHorse(id) {
     state.horses = state.horses.filter((h) => h.id !== id);
@@ -414,6 +442,15 @@ const Game = (function () {
     if (dy < Model.MATURITY_YEARS) return { error: dam.name + ' ist mit ' + dy.toFixed(1) + ' Jahren zu jung.' };
     if (dy > Model.MAX_BREED_AGE) return { error: dam.name + ' ist zu alt für die Zucht.' };
 
+    // Freundes-Deckhengst: erst offene Decktaxen abrechnen, wenn zu viele.
+    let friendEntry = null;
+    if (sr.friend) {
+      friendEntry = (state.friendStuds || []).find((x) => x.horse.id === sire.id);
+      if (friendEntry && (friendEntry.owed || 0) >= (friendEntry.studFee || 1) * 5) {
+        return { error: 'Zu viele offene Bedeckungen bei ' + sire.name + ' — schick erst eine Decktaxe-Abrechnung an ' + sr.friend + ' (Tab Gestüt → Freunde).' };
+      }
+    }
+
     const coi = Model.inbreedingCoefficient(sire, dam);
     const forecast = Genetics.foalColorForecast(sire.genotype, dam.genotype);
     const statForecast = Model.foalStatForecast(sire, dam);
@@ -429,6 +466,7 @@ const Game = (function () {
 
     return {
       sire: sire, dam: dam, external: sr.external, coi: coi,
+      friend: sr.friend || null, friendEntry: friendEntry,
       forecast: forecast, statForecast: statForecast, match: match,
       fee: fee, conceiveChance: chance,
     };
@@ -439,6 +477,14 @@ const Game = (function () {
     if (plan.error) return { ok: false, msg: plan.error };
     if (state.cash < plan.fee) return { ok: false, msg: 'Deckgebühr ' + Economy.fmtEur(plan.fee) + ' nicht bezahlbar.' };
     state.cash -= plan.fee;
+    // Bei einem Freundes-Deckhengst wandert die Gebühr in eine offene
+    // Abrechnung an den Besitzer (per Code auszahlbar).
+    if (plan.friend && plan.friendEntry) {
+      plan.friendEntry.owed = (plan.friendEntry.owed || 0) + plan.fee;
+      plan.friendEntry.owedCount = (plan.friendEntry.owedCount || 0) + 1;
+      log('Decktaxe ' + Economy.fmtEur(plan.fee) + ' für ' + plan.sire.name + ' geht an ' + plan.friend +
+        ' (offen: ' + Economy.fmtEur(plan.friendEntry.owed) + ' aus ' + plan.friendEntry.owedCount + ' Bedeckungen).', 'cost');
+    }
     log('Deckakt ' + plan.dam.name + ' × ' + plan.sire.name +
       (plan.external ? ' (Deckstation)' : '') +
       ' - Gebühr ' + Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%.', 'cost');
@@ -837,6 +883,9 @@ const Game = (function () {
       text: (state.pendingOffers.length) + ' Verkaufsangebot' + (state.pendingOffers.length > 1 ? 'e warten' : ' wartet') + ' auf ein Kaufgebot' });
     if ((state.pendingPurchases || []).length) t.push({ icon: '👥', tab: 'gestüt', kind: 'info',
       text: 'Du wartest auf ' + state.pendingPurchases.length + ' Lieferung' + (state.pendingPurchases.length > 1 ? 'en' : '') + ' von Freunden' });
+    const debt = (state.friendStuds || []).reduce((sum, x) => sum + (x.owed || 0), 0);
+    if (debt > 0) t.push({ icon: '💶', tab: 'gestüt', kind: 'info',
+      text: 'Offene Decktaxe an Freunde: ' + Economy.fmtEur(debt) + ' — Abrechnungs-Code erstellen' });
 
     return t;
   }
@@ -869,6 +918,8 @@ const Game = (function () {
     acceptDelivery: acceptDelivery,
     shareStud: shareStud,
     acceptStud: acceptStud,
+    settleFriendStud: settleFriendStud,
+    acceptPayout: acceptPayout,
     removeFriendStud: removeFriendStud,
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,
