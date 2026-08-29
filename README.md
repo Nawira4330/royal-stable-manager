@@ -100,6 +100,10 @@ auf dem Startbildschirm alle Regeln.
   - **Öffentlicher Verkauf** – jeder mit dem Code kann bieten; du nimmst *ein*
     Kaufgebot an (wer zuerst bietet). 4-Schritt-Ablauf mit Angebot → Kaufgebot →
     Verkaufen/Lieferung → Übernehmen; Geld fließt erst am Ende.
+  - **Freundesliste** – Codes mit Spitznamen speichern (nach dem ersten Tausch
+    automatisch vorgemerkt); Spitzname statt Code beim privaten Verkauf.
+  - **Freundes-Rangliste** (Tab Schauen) – eigene Saisonpunkte als Code teilen,
+    Codes von Freunden öffnen → gemeinsame Tabelle (reine Anzeige).
   - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
     dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
     Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**

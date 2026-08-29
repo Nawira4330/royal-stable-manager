@@ -43,6 +43,8 @@ const Game = (function () {
       careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
       demand: Economy.initDemand(),   // Angebot & Nachfrage je Rasse/Disziplin
       friendCode: Friend.playerCode(),
+      friends: [],        // gespeicherte Freundescodes mit Spitznamen
+      friendRankings: [], // importierte Saisonwertungen von Freunden
       friendStuds: [],    // von Freunden übernommene Deckhengste
       pendingOffers: [],  // eigene offene Verkaufsangebote { id, horseId, price, to }
       pendingPurchases: [], // abgegebene Kaufgebote, auf Lieferung wartend
@@ -135,6 +137,8 @@ const Game = (function () {
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
     if (state.stats.biggestWin === undefined) state.stats.biggestWin = 0;
     if (!state.friendCode) state.friendCode = Friend.playerCode();
+    if (!Array.isArray(state.friends)) state.friends = [];
+    if (!Array.isArray(state.friendRankings)) state.friendRankings = [];
     if (!Array.isArray(state.friendStuds)) state.friendStuds = [];
     if (!Array.isArray(state.pendingOffers)) state.pendingOffers = [];
     if (!Array.isArray(state.pendingPurchases)) state.pendingPurchases = [];
@@ -551,6 +555,70 @@ const Game = (function () {
     return { ok: true, amount: v };
   }
 
+  // --- Freundesliste: Codes mit Spitznamen lokal merken ----------------
+  const FRIEND_RE = /^HR-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+  function addFriend(code, name) {
+    code = (code || '').trim().toUpperCase();
+    if (!FRIEND_RE.test(code)) return { ok: false, msg: 'Freundescode-Format: HR-XXXX-XXXX' };
+    if (code === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
+    state.friends = state.friends || [];
+    name = String(name || '').trim().slice(0, 24);
+    const existing = state.friends.find((f) => f.code === code);
+    if (existing) { if (name) existing.name = name; }
+    else {
+      if (state.friends.length >= 40) return { ok: false, msg: 'Freundesliste ist voll (40).' };
+      state.friends.push({ code: code, name: name, addedWeek: state.week });
+      log('👥 Freund gespeichert: ' + (name || code) + '.', 'info');
+    }
+    save(); emit();
+    return { ok: true };
+  }
+  function removeFriend(code) {
+    state.friends = (state.friends || []).filter((f) => f.code !== code);
+    save(); emit();
+    return { ok: true };
+  }
+  // Merkt einen Code beim ersten echten Tausch automatisch vor (ohne Namen).
+  function rememberFriend(code) {
+    code = (code || '').trim().toUpperCase();
+    if (!FRIEND_RE.test(code) || code === state.friendCode) return;
+    state.friends = state.friends || [];
+    if (!state.friends.some((f) => f.code === code) && state.friends.length < 40) {
+      state.friends.push({ code: code, name: '', addedWeek: state.week });
+    }
+  }
+  function friendLabel(code) {
+    if (!code) return '?';
+    const f = (state.friends || []).find((x) => x.code === code);
+    return (f && f.name) ? f.name + ' (' + code + ')' : code;
+  }
+
+  // --- Gemeinsame Saison-Rangliste: eigene Wertung teilen / Freundes-
+  //     Wertungen importieren (reine Anzeige).
+  function shareRanking() {
+    const pts = Math.round(Economy.mySeasonPoints(state));
+    return { ok: true, code: Friend.encodeRanking(state.friendCode, state.studName, pts, state.prestige, state.seasonYear || 1, state.week) };
+  }
+  function importRanking(text) {
+    let d;
+    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
+    if (d.type !== 'RK') return { ok: false, msg: 'Das ist kein Ranglisten-Code.' };
+    if (d.from === state.friendCode) return { ok: false, msg: 'Das ist deine eigene Rangliste.' };
+    state.friendRankings = state.friendRankings || [];
+    const prev = state.friendRankings.find((r) => r.code === d.from);
+    const entry = { code: d.from, stud: d.stud || d.from, points: d.points, prestige: d.prestige, year: d.year, week: d.week };
+    if (prev) {
+      if (d.week < prev.week) return { ok: false, msg: 'Du hast von ' + friendLabel(d.from) + ' bereits eine neuere Wertung.' };
+      Object.assign(prev, entry);
+    } else {
+      state.friendRankings.push(entry);
+    }
+    rememberFriend(d.from);
+    log('🏇 Saisonwertung von ' + (d.stud || friendLabel(d.from)) + ' übernommen: ' + d.points + ' Punkte (Jahr ' + d.year + ').', 'info');
+    save(); emit();
+    return { ok: true, stud: d.stud, points: d.points };
+  }
+
   // --- Freundes-Tausch: Codes weitergeben, kein Server ------------------
   function markRedeemed(hash) {
     state.redeemedCodes = state.redeemedCodes || [];
@@ -573,8 +641,14 @@ const Game = (function () {
     const h = getHorse(horseId);
     const block = sellBlockReason(h);
     if (block) return { ok: false, msg: block };
-    toCode = (toCode || '').trim().toUpperCase() || null;
-    if (toCode && !/^HR-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(toCode)) return { ok: false, msg: 'Freundescode-Format: HR-XXXX-XXXX' };
+    toCode = (toCode || '').trim() || null;
+    if (toCode && !FRIEND_RE.test(toCode.toUpperCase())) {
+      // vielleicht ein Spitzname aus der Freundesliste?
+      const byName = (state.friends || []).find((f) => f.name && f.name.toLowerCase() === toCode.toLowerCase());
+      if (byName) toCode = byName.code;
+      else return { ok: false, msg: 'Kein Freundescode/Spitzname erkannt (Format HR-XXXX-XXXX).' };
+    }
+    toCode = toCode ? toCode.toUpperCase() : null;
     if (toCode && toCode === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
     price = Math.max(0, Math.round(price || 0));
     const id = Friend.newOfferId();
@@ -643,6 +717,11 @@ const Game = (function () {
       return { ok: true, action: 'confirm', kind: 'Quittung', from: d.from, amount: d.amount,
         text: d.from + ' bestätigt den Erhalt von ' + Economy.fmtEur(d.amount) + ' Decktaxe für ' + ps.horse.name + '.' };
     }
+    if (d.type === 'RK') {
+      if (d.from === mine) return { ok: false, msg: 'Das ist deine eigene Rangliste.' };
+      return { ok: true, action: 'ranking', kind: 'Saison-Rangliste', from: d.from,
+        text: (d.stud || d.from) + ': ' + d.points + ' Saisonpunkte, ' + d.prestige + ' Prestige (Jahr ' + d.year + ', Wo. ' + d.week + ').' };
+    }
     // SD Deckhengst
     if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
     if (already) return { ok: false, msg: 'Diesen Deckhengst hast du schon übernommen.' };
@@ -684,7 +763,8 @@ const Game = (function () {
     h.offered = false;
     removeHorse(h.id);
     state.pendingOffers = state.pendingOffers.filter((o) => o.id !== off.id);
-    log('Verkauft an ' + d.from + ': ' + h.name + ' für ' + Economy.fmtEur(off.price) + '. Lieferungs-Code an den Käufer schicken.', 'good');
+    rememberFriend(d.from);
+    log('Verkauft an ' + friendLabel(d.from) + ': ' + h.name + ' für ' + Economy.fmtEur(off.price) + '. Lieferungs-Code an den Käufer schicken.', 'good');
     save(); emit();
     return { ok: true, code: delivery, horseName: h.name };
   }
@@ -699,8 +779,9 @@ const Game = (function () {
     state.cash -= d.price;
     state.horses.push(h);
     markRedeemed(d.hash);
+    rememberFriend(d.from);
     state.pendingPurchases = (state.pendingPurchases || []).filter((q) => q.offerId !== d.id);
-    log('Von ' + d.from + ' gekauft: ' + h.name + ' für ' + Economy.fmtEur(d.price) + '.', 'cost');
+    log('Von ' + friendLabel(d.from) + ' gekauft: ' + h.name + ' für ' + Economy.fmtEur(d.price) + '.', 'cost');
     save(); emit();
     return { ok: true, name: h.name };
   }
@@ -724,7 +805,8 @@ const Game = (function () {
     stud.external = true;
     state.friendStuds.push({ horse: stud, studFee: d.fee, friend: d.from, elite: false });
     markRedeemed(d.hash);
-    log('Deckhengst von ' + d.from + ' in deiner Deckstation: ' + stud.name + ' (Deckgeld ' + Economy.fmtEur(d.fee) + ').', 'good');
+    rememberFriend(d.from);
+    log('Deckhengst von ' + friendLabel(d.from) + ' in deiner Deckstation: ' + stud.name + ' (Deckgeld ' + Economy.fmtEur(d.fee) + ').', 'good');
     save(); emit();
     return { ok: true, name: stud.name };
   }
@@ -762,7 +844,8 @@ const Game = (function () {
     state.paidReceipts.push({ id: d.id, from: d.from, amount: d.amount, week: state.week });
     if (state.paidReceipts.length > 40) state.paidReceipts.shift();
     const confirmCode = Friend.encodeConfirm('payout', d.id, state.friendCode, d.amount);
-    log('Decktaxe erhalten: ' + Economy.fmtEur(d.amount) + ' von ' + d.from + ' (' + d.count + ' Bedeckungen). Quittung zurückschicken.', 'good');
+    rememberFriend(d.from);
+    log('Decktaxe erhalten: ' + Economy.fmtEur(d.amount) + ' von ' + friendLabel(d.from) + ' (' + d.count + ' Bedeckungen). Quittung zurückschicken.', 'good');
     save(); emit();
     return { ok: true, amount: d.amount, confirmCode: confirmCode };
   }
@@ -792,6 +875,10 @@ const Game = (function () {
   function removeHorse(id) {
     state.horses = state.horses.filter((h) => h.id !== id);
     state.saleListings = state.saleListings.filter((s) => s.horseId !== id);
+    // aus offenen Turnier-Nennungen entfernen (verkauft/abgegeben vor „Woche weiter")
+    (state.shows || []).forEach((sh) => {
+      if (sh.entered && sh.entered.indexOf(id) !== -1) sh.entered = sh.entered.filter((x) => x !== id);
+    });
   }
 
   // --- Zucht.
@@ -1177,16 +1264,18 @@ const Game = (function () {
         state.stats.totalEarnings += r.totalPrize;
         const mine = r.results.filter((x) => x.player).sort((a, b) => a.place - b.place);
         const best = mine[0];
-        state.stats.showWins += mine.filter((x) => x.place === 1).length;
-        if (r.totalPrize > (state.stats.biggestWin || 0)) state.stats.biggestWin = r.totalPrize;
-        log('🏆 ' + show.name + ': bestes eigenes Pferd Platz ' + best.place + '/' + r.results.length +
-          ' (' + best.scoreLabel + '). Preisgeld ' + Economy.fmtEur(r.totalPrize) +
-          (r.travelCost ? ', Reise -' + Economy.fmtEur(r.travelCost) : '') + ', +' + r.prestigeGain + ' Prestige.', 'good');
-        show._playerResults = mine;
-        show._allResults = r.results;
-        state.showResults = state.showResults || [];
-        state.showResults.unshift({ week: state.week, name: show.name, results: r.results.slice(0, 12) });
-        if (state.showResults.length > 10) state.showResults.pop();
+        if (best) {
+          state.stats.showWins += mine.filter((x) => x.place === 1).length;
+          if (r.totalPrize > (state.stats.biggestWin || 0)) state.stats.biggestWin = r.totalPrize;
+          log('🏆 ' + show.name + ': bestes eigenes Pferd Platz ' + best.place + '/' + r.results.length +
+            ' (' + best.scoreLabel + '). Preisgeld ' + Economy.fmtEur(r.totalPrize) +
+            (r.travelCost ? ', Reise -' + Economy.fmtEur(r.travelCost) : '') + ', +' + r.prestigeGain + ' Prestige.', 'good');
+          show._playerResults = mine;
+          show._allResults = r.results;
+          state.showResults = state.showResults || [];
+          state.showResults.unshift({ week: state.week, name: show.name, results: r.results.slice(0, 12) });
+          if (state.showResults.length > 10) state.showResults.pop();
+        }
       }
     });
 
@@ -1608,6 +1697,11 @@ const Game = (function () {
     COLORTEST_COST: COLORTEST_COST,
     setInsurance: setInsurance,
     fulfillBreedingOrder: fulfillBreedingOrder,
+    addFriend: addFriend,
+    removeFriend: removeFriend,
+    friendLabel: friendLabel,
+    shareRanking: shareRanking,
+    importRanking: importRanking,
     createOffer: createOffer,
     cancelOffer: cancelOffer,
     previewCode: previewCode,

@@ -14,6 +14,9 @@
                             Erst hier zahlt der Käufer und bekommt das Pferd.
    SD  DECKHENGST          Öffentlich & mehrfach nutzbar: jeder Freund kann
                             den Hengst dauerhaft in seine Deckstation legen.
+   RK  RANGLISTE           Momentaufnahme der eigenen Saisonwertung (Gestüts-
+                            name, Saisonpunkte, Prestige, Saisonjahr) für eine
+                            gemeinsame Freundes-Rangliste. Nur Anzeige.
 
    Jeder Code ist Text (UTF-8 -> Base64url mit kurzer Prüfsumme) und wird
    vom Spieler selbst weitergegeben – geräteübergreifend.
@@ -103,13 +106,19 @@ const Friend = (function () {
   function encodeConfirm(kind, refId, fromCode, amount) {
     return pack('CF', { v: 2, k: kind, id: refId, from: fromCode, amount: Math.max(0, Math.round(amount || 0)) });
   }
+  // Saisonwertungs-Momentaufnahme für die gemeinsame Freundes-Rangliste.
+  function encodeRanking(fromCode, studName, points, prestige, seasonYear, week) {
+    return pack('RK', { v: 2, from: fromCode, stud: String(studName || '').slice(0, 40),
+      points: Math.max(0, Math.round(points || 0)), prestige: Math.max(0, Math.round(prestige || 0)),
+      year: Math.max(1, Math.round(seasonYear || 1)), week: Math.max(0, Math.round(week || 0)) });
+  }
 
-  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung', CF: 'Quittung' };
+  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung', CF: 'Quittung', RK: 'Saison-Rangliste' };
 
   // --- Decoder: prüft Form + Prüfsumme, wirft bei Murks ---------------
   function decode(str) {
     const s = (str || '').trim().replace(/\s+/g, '');
-    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY|CF)\.([a-z0-9]{1,8})\.(.+)$/i);
+    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY|CF|RK)\.([a-z0-9]{1,8})\.(.+)$/i);
     if (!m) throw new Error('Das ist kein gültiger Tauschcode.');
     const type = m[1].toUpperCase();
     if (sig(m[3]) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
@@ -119,7 +128,8 @@ const Friend = (function () {
       id: p.id || null, from: p.from || '???', to: p.to || null,
       seller: p.seller || null, public: !!p.public, confirmKind: p.k || null,
       price: p.price || 0, fee: p.fee || 0, amount: p.amount || 0, count: p.count || 0,
-      stud: p.stud || '', horse: p.horse || null };
+      stud: p.stud || '', horse: p.horse || null,
+      points: p.points || 0, prestige: p.prestige || 0, year: p.year || 1, week: p.week || 0 };
     if ((type === 'OF' || type === 'DL' || type === 'SD') && (!out.horse || !out.horse.genotype)) {
       throw new Error('Im Code fehlen Pferdedaten.');
     }
@@ -135,6 +145,7 @@ const Friend = (function () {
     encodeStud: encodeStud,
     encodePayout: encodePayout,
     encodeConfirm: encodeConfirm,
+    encodeRanking: encodeRanking,
     decode: decode,
   };
 })();

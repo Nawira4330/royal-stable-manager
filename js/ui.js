@@ -224,7 +224,9 @@ const UI = (function () {
           <button class="small" data-action="open-code">Öffnen</button>
         </div>
         <p class="small muted">Beim Öffnen siehst du zuerst das Pferd und seine Werte — kaufen bzw. übernehmen musst du dann selbst bestätigen.
-        Im Tab „Stall" bietest du eigene Pferde an (privat = nur ein bestimmter Freundescode, öffentlich = wer zuerst bietet) oder gibst einen Deckhengst frei.</p>
+        Im Tab „Stall" bietest du eigene Pferde an (privat = nur ein bestimmter Freundescode, öffentlich = wer zuerst bietet) oder gibst einen Deckhengst frei.
+        Ein „Öffnen" akzeptiert auch <b>Ranglisten-Codes</b> von Freunden (Tab Schauen).</p>
+        ${friendsListBlock(s)}
         ${friendPending(s)}
       </div>
 
@@ -452,25 +454,45 @@ const UI = (function () {
       '<button class="small secondary" data-action="offer-stud-service" data-id="' + h.id + '">🐴 Für fremde Zuchtstuten anbieten (Deckgeld)</button></div>';
   }
 
+  function friendsListBlock(s) {
+    const list = (s.friends || []).slice().sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code));
+    const rows = list.map((f) =>
+      '<div class="row between" style="padding:.2rem 0"><span><b class="small">' + esc(f.name || '(ohne Namen)') + '</b> ' +
+      '<span class="geno-tokens" style="padding:.05rem .35rem;font-size:.72rem">' + esc(f.code) + '</span></span>' +
+      '<span><button class="small secondary" data-action="rename-friend" data-code="' + esc(f.code) + '">umbenennen</button> ' +
+      '<button class="small danger" data-action="remove-friend" data-code="' + esc(f.code) + '">×</button></span></div>'
+    ).join('') || '<p class="small muted">Noch keine Freunde gespeichert. Nach dem ersten Tausch werden Codes automatisch vorgemerkt.</p>';
+    return `<details style="margin-top:.6rem">
+      <summary class="small"><b>Freundesliste</b> <span class="muted">(${list.length})</span> — Codes mit Spitznamen für schnelle private Verkäufe</summary>
+      <div class="row" style="margin-top:.4rem">
+        <input type="text" id="friend-code" placeholder="HR-XXXX-XXXX" style="width:9rem;font-family:ui-monospace,Consolas,monospace">
+        <input type="text" id="friend-name" placeholder="Spitzname" style="width:8rem">
+        <button class="small" data-action="add-friend">hinzufügen</button>
+      </div>
+      <div style="margin-top:.4rem">${rows}</div>
+    </details>`;
+  }
+
   function friendPending(s) {
+    const nm = (c) => esc(Game.friendLabel(c));
     const offers = (s.pendingOffers || []).map((o) => {
       const h = Game.getHorse(o.horseId);
       return '<div class="row between"><span>🏷️ ' + esc(h ? h.name : '?') + ' — ' + fmt(o.price) +
-        (o.to ? ' · privat an ' + esc(o.to) : ' · öffentlich') + '</span><span>' +
+        (o.to ? ' · privat an ' + nm(o.to) : ' · öffentlich') + '</span><span>' +
         '<button class="small secondary" data-action="show-offer-code" data-id="' + o.id + '">Code</button> ' +
         '<button class="small secondary" data-action="cancel-offer" data-id="' + o.id + '">zurückziehen</button></span></div>';
     }).join('');
     const purch = (s.pendingPurchases || []).map((q) =>
-      '<div>⏳ Kaufgebot für „' + esc(q.horseName) + '" (' + fmt(q.price) + ') an ' + esc(q.seller) + ' — wartet auf Lieferung</div>'
+      '<div>⏳ Kaufgebot für „' + esc(q.horseName) + '" (' + fmt(q.price) + ') an ' + nm(q.seller) + ' — wartet auf Lieferung</div>'
     ).join('');
     const debts = (s.friendStuds || []).filter((x) => x.owed > 0).map((x) =>
-      '<div class="row between"><span>💶 Decktaxe für ' + esc(x.horse.name) + ' (Besitzer ' + esc(x.friend) + '): <b>' +
+      '<div class="row between"><span>💶 Decktaxe für ' + esc(x.horse.name) + ' (Besitzer ' + nm(x.friend) + '): <b>' +
       fmt(x.owed) + '</b> aus ' + (x.owedCount || 0) + ' Bedeckungen</span>' +
       '<button class="small" data-action="settle-stud" data-id="' + x.horse.id + '">Abrechnungs-Code erstellen</button></div>'
     ).join('');
     const pending = (s.friendStuds || []).filter((x) => x.pendingSettle).map((x) =>
       '<div class="row between"><span>🧾 Abrechnung ' + fmt(x.pendingSettle.amount) + ' für ' + esc(x.horse.name) +
-      ' an ' + esc(x.friend) + ' — <b>wartet auf Quittung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
+      ' an ' + nm(x.friend) + ' — <b>wartet auf Quittung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
       '<button class="small secondary" data-action="resend-settle" data-id="' + x.horse.id + '">Code nochmal</button></span></div>'
     ).join('');
     if (!offers && !purch && !debts && !pending) return '';
@@ -1140,6 +1162,28 @@ const UI = (function () {
       <table class="small"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${rankRows}</tbody></table>
     </div>`;
 
+    // Gemeinsame Freundes-Rangliste: du + importierte Freundes-Wertungen.
+    const myPts = Math.round(Economy.mySeasonPoints(s));
+    const frRows = [{ stud: s.studName + ' (du)', points: myPts, prestige: Math.round(s.prestige), year: s.seasonYear || 1, me: true }]
+      .concat((s.friendRankings || []).map((r) => ({ stud: r.stud || r.code, points: r.points, prestige: r.prestige, year: r.year, week: r.week })))
+      .sort((a, b) => b.points - a.points || b.prestige - a.prestige)
+      .map((r, i) => '<tr class="' + (r.me ? 'selected' : '') + '"><td>' + (i + 1) + '.</td><td>' + esc(r.stud) +
+        (r.year && r.year !== (s.seasonYear || 1) ? ' <span class="tag warn" title="andere Saison">Jahr ' + r.year + '</span>' : '') +
+        '</td><td class="right">' + r.points + '</td><td class="right muted small">' + r.prestige + '</td></tr>').join('');
+    const friendRankCard = `<div class="card" style="margin-top:1rem">
+      <h3>👥 Freundes-Rangliste</h3>
+      <p class="small muted">Nur Anzeige, kein Server. Teile deine aktuelle Saisonwertung als Code; öffne die Codes deiner Freunde
+      (hier oder im Feld „Öffnen" auf dem Tab Gestüt), um sie in diese Tabelle aufzunehmen. Jeder Freundes-Eintrag wird durch
+      einen neueren Code überschrieben.</p>
+      <div class="row">
+        <button class="small" data-action="share-ranking">Meine Wertung als Code</button>
+        <input type="text" id="ranking-import" placeholder="Ranglisten-Code eines Freundes…" style="flex:1;min-width:180px;font-family:ui-monospace,Consolas,monospace;font-size:.75rem">
+        <button class="small secondary" data-action="import-ranking">übernehmen</button>
+      </div>
+      <table class="small" style="margin-top:.5rem"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${frRows}</tbody></table>
+      ${(s.friendRankings || []).length ? '<button class="small secondary" data-action="clear-rankings" style="margin-top:.4rem">Freundes-Wertungen leeren</button>' : ''}
+    </div>`;
+
     const hist = (s.championHistory || []).map((c) =>
       '<details><summary class="small"><b>Jahr ' + c.year + ' — Gesamt-Champion: ' + esc(c.overall || '—') + '</b></summary>' +
       '<div class="small">' + DISC.map((d) => d + ': ' + esc(c.disciplines[d] || '—')).join(' · ') + '</div></details>').join('');
@@ -1178,6 +1222,7 @@ const UI = (function () {
       <div class="grid cols-2" style="margin-top:1rem">${cards}</div>
       ${recent ? '<div class="card" style="margin-top:1rem"><h3>📋 Letzte Ergebnisse</h3>' + recent + '</div>' : ''}
       ${rankCard}
+      ${friendRankCard}
       ${standings ? '<div class="card" style="margin-top:1rem"><h3>🏅 Deine Pferde je Disziplin</h3>' + standings + '</div>' : ''}
       ${jungCard}
       ${hist ? '<div class="card" style="margin-top:1rem"><h3>🏆 Championat-Historie</h3>' + hist + '</div>' : ''}`;
@@ -1443,6 +1488,36 @@ const UI = (function () {
       catch (e) { toast(Game.state.friendCode, false); }
       return;
     }
+    if (a === 'add-friend') {
+      const c = ($('#friend-code') || {}).value || '';
+      const n = ($('#friend-name') || {}).value || '';
+      const r = Game.addFriend(c, n);
+      toast(r.ok ? 'Freund gespeichert.' : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'rename-friend') {
+      const cur = (Game.state.friends || []).find((f) => f.code === el.dataset.code);
+      const n = prompt('Spitzname für ' + el.dataset.code + ':', cur ? cur.name : '');
+      if (n == null) return;
+      Game.addFriend(el.dataset.code, n);
+      return;
+    }
+    if (a === 'remove-friend') { Game.removeFriend(el.dataset.code); return; }
+    if (a === 'share-ranking') {
+      const r = Game.shareRanking();
+      UI.showCode('Deine Saison-Rangliste', 'Schick diesen Code an Freunde. Sie öffnen ihn und sehen dich in ihrer Freundes-Rangliste.', r.code);
+      return;
+    }
+    if (a === 'import-ranking') {
+      const inp = $('#ranking-import');
+      const r = Game.importRanking(inp ? inp.value.trim() : '');
+      toast(r.ok ? 'Rangliste von ' + (r.stud || 'Freund') + ' übernommen.' : r.msg, !r.ok);
+      return;
+    }
+    if (a === 'clear-rankings') {
+      if (confirm('Alle importierten Freundes-Wertungen entfernen?')) { Game.state.friendRankings = []; Game.save(); render(); }
+      return;
+    }
     if (a === 'open-code') {
       const inp = $('#redeem-input');
       const raw = inp ? inp.value.trim() : '';
@@ -1452,7 +1527,10 @@ const UI = (function () {
     }
     if (a === 'offer-horse') {
       const h = Game.getHorse(el.dataset.id);
-      const to = prompt('An wen? Freundescode für einen PRIVATEN Verkauf (Format HR-XXXX-XXXX).\nLeer lassen = ÖFFENTLICH (jeder mit dem Code kann bieten, wer zuerst bietet, bekommt es).', '');
+      const saved = (Game.state.friends || []).filter((f) => f.name).map((f) => f.name).slice(0, 8);
+      const to = prompt('An wen? Freundescode (HR-XXXX-XXXX) oder Spitzname aus deiner Freundesliste für einen PRIVATEN Verkauf.' +
+        (saved.length ? '\nGespeichert: ' + saved.join(', ') : '') +
+        '\nLeer lassen = ÖFFENTLICH (wer zuerst bietet, bekommt es).', '');
       if (to == null) return;
       const price = prompt('Verkaufspreis für „' + h.name + '" (Marktwert ' + fmt(Game.marketPrice(h)) + '):', Game.marketPrice(h));
       if (price == null) return;
@@ -1711,6 +1789,7 @@ const UI = (function () {
       payout: 'Decktaxe annehmen (' + fmt(p.amount) + ')',
       confirm: 'Abrechnung abschließen',
       reissue: 'Quittung erneut erzeugen',
+      ranking: 'In Freundes-Rangliste übernehmen',
     }[p.action];
     $('#trade-actions').innerHTML =
       '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
@@ -1732,7 +1811,9 @@ const UI = (function () {
     else if (act === 'payout') r = Game.acceptPayout(tradeRaw);
     else if (act === 'confirm') r = Game.confirmPayout(tradeRaw);
     else if (act === 'reissue') r = Game.reissueReceipt(tradeRaw);
+    else if (act === 'ranking') r = Game.importRanking(tradeRaw);
     if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
+    if (act === 'ranking') { toast('Rangliste von ' + esc(r.stud || 'Freund') + ' übernommen.'); render(); return; }
     if (act === 'payout' || act === 'reissue') {
       showCode('Quittung: Decktaxe erhalten',
         'Schick diese Quittung an den Zahler zurück, damit er die Abrechnung bei sich abschließen kann.', r.confirmCode);
