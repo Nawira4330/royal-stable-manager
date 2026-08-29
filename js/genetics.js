@@ -1,8 +1,8 @@
 /* ============================================================================
-   Farbgenetik-Motor fuer das Gestuetsspiel.
+   Farbgenetik-Motor für das Gestütsspiel.
 
    Diploid: jeder Genort (Locus) hat zwei Allele. Vererbung ist strikt
-   Mendelsch - jedes Elternteil gibt pro Locus zufaellig eines seiner beiden
+   Mendelsch - jedes Elternteil gibt pro Locus zufällig eines seiner beiden
    Allele weiter. Angelehnt an horsereality.wiki (Colour Genetics Guide) und
    reale Pferdegenetik. Kein Framework, nur ein globales `Genetics`-Objekt.
    ========================================================================== */
@@ -34,7 +34,7 @@ const Genetics = (function () {
   function pick(arr, rng) { return arr[Math.floor((rng ? rng() : Math.random()) * arr.length)]; }
 
   // Zieht pro Locus ein Allel von jedem Elternteil. `af` (Allel-Frequenzen)
-  // wird nur fuer frisch generierte Pferde ohne Eltern gebraucht.
+  // wird nur für frisch generierte Pferde ohne Eltern gebraucht.
   function randomGenotype(alleleFreq, rng) {
     const gt = {};
     LOCUS_KEYS.forEach((k) => {
@@ -48,7 +48,7 @@ const Genetics = (function () {
     const alleles = LOCI[locus].alleles;
     if (!table) {
       // Ohne Vorgabe: praktisch immer Wildtyp. Rassen, die eine Farbe/ein
-      // Muster fuehren sollen, geben dafuer explizite Frequenzen an.
+      // Muster führen sollen, geben dafür explizite Frequenzen an.
       const r = (rng ? rng() : Math.random());
       if (r < 0.006) return alleles[0];
       return alleles[alleles.length - 1];
@@ -71,14 +71,14 @@ const Genetics = (function () {
     return gt;
   }
 
-  // Letale / nicht lebensfaehige Kombinationen. Gibt `null` zurueck, wenn
+  // Letale / nicht lebensfähige Kombinationen. Gibt `null` zurück, wenn
   // das Fohlen lebt, sonst { code, text }.
   function lethalCheck(gt) {
     if (gt.O[0] === 'O' && gt.O[1] === 'O') {
-      return { code: 'OLWS', text: 'Overo Lethal White Syndrome - homozygotes Frame-Fohlen ist nicht lebensfaehig.' };
+      return { code: 'OLWS', text: 'Overo Lethal White Syndrome - homozygotes Frame-Fohlen ist nicht lebensfähig.' };
     }
     if (gt.RN[0] === 'Rn' && gt.RN[1] === 'Rn') {
-      return { code: 'ROAN', text: 'Homozygot Roan - Embryo wird sehr frueh resorbiert (klassische Spielregel).' };
+      return { code: 'ROAN', text: 'Homozygot Roan - Embryo wird sehr früh resorbiert (klassische Spielregel).' };
     }
     return null;
   }
@@ -86,7 +86,7 @@ const Genetics = (function () {
   function count(pair, allele) { return pair.filter((a) => a === allele).length; }
   function has(pair, allele) { return pair.indexOf(allele) !== -1; }
 
-  // --- Phaenotyp: was man dem Pferd ansieht. `ageYears` steuert das
+  // --- Phänotyp: was man dem Pferd ansieht. `ageYears` steuert das
   //     Ausschimmeln bei Grey.
   function describe(gt, ageYears) {
     const red = gt.E[0] === 'e' && gt.E[1] === 'e';
@@ -101,7 +101,7 @@ const Genetics = (function () {
     const silver = has(gt.Z, 'Z') && baseKind !== 'red'; // Silver braucht Schwarzpigment
     let blueEyes = false;
 
-    // Aufhellungen - staerkster Effekt gewinnt fuer den Kurznamen.
+    // Aufhellungen - stärkster Effekt gewinnt für den Kurznamen.
     if (crN === 2) {
       name = red ? 'Cremello' : bay ? 'Perlino' : 'Smoky Cream';
       blueEyes = true;
@@ -146,7 +146,7 @@ const Genetics = (function () {
 
     if (swN === 2 || crN === 2) blueEyes = true;
 
-    // Grey ueberdeckt alles mit der Zeit.
+    // Grey überdeckt alles mit der Zeit.
     let greyStage = 0; // 0 keins, 1 beginnt, 2 stark, 3 (fast) weiss
     if (has(gt.G, 'G')) {
       const y = ageYears || 0;
@@ -189,7 +189,7 @@ const Genetics = (function () {
     return out.join(' ') || 'Wildtyp (Fuchs)';
   }
 
-  // Grober "Seltenheitswert" der Farbe fuer Preis/Bewertung (0..1).
+  // Grober "Seltenheitswert" der Farbe für Preis/Bewertung (0..1).
   function rarityScore(gt) {
     let s = 0;
     if (count(gt.CR, 'Cr') === 2) s += 0.25;
@@ -208,12 +208,12 @@ const Genetics = (function () {
     return Math.min(1, s);
   }
 
-  // --- Vorschau fuer den Zuchtplaner: Verteilung moeglicher Fohlenfarben
+  // --- Vorschau für den Zuchtplaner: Verteilung möglicher Fohlenfarben
   //     durch Ausmultiplizieren aller Locus-Kombinationen (Punnett).
   function foalColorForecast(sireGt, damGt, opts) {
     opts = opts || {};
     const maxOutcomes = opts.limit || 8;
-    // Wir simulieren, weil das volle Kreuzprodukt (3^n) zu gross ist.
+    // Wir simulieren, weil das volle Kreuzprodukt (3^n) zu groß ist.
     const N = 4000;
     const tally = new Map();
     let lethal = 0;

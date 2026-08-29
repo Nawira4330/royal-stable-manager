@@ -10,7 +10,7 @@ const Names = (function () {
     'blaze', 'grace', 'chaser', 'whisper', 'crown', 'legend', 'dream', 'echo', 'flight', 'star'];
   const GERMAN = ['Fabelhaft', 'Donnerwetter', 'Wolkentanz', 'Feuerherz', 'Morgenstern', 'Nordwind', 'Goldregen',
     'Sturmvogel', 'Abendrot', 'Freiheit', 'Kastanie', 'Diamant', 'Lavendel', 'Bernstein', 'Rabenschwarz',
-    'Schneekoenig', 'Mondschein', 'Sommerwind', 'Wildrose', 'Zephyr'];
+    'Schneekönig', 'Mondschein', 'Sommerwind', 'Wildrose', 'Zephyr'];
 
   const STUD_WORDS = ['Eichenhof', 'Talblick', 'Rosenau', 'Sonnenweide', 'Nebelmoor', 'Hochland', 'Birkengrund',
     'Silbersee', 'Adlerhorst', 'Weissdorn', 'Kastanienhof', 'Morgentau'];
@@ -24,14 +24,14 @@ const Names = (function () {
 
   function randStudName(rng) {
     const w = STUD_WORDS[Math.floor((rng ? rng() : Math.random()) * STUD_WORDS.length)];
-    return 'Gestuet ' + w;
+    return 'Gestüt ' + w;
   }
 
-  // --- Rassen. `aff` = Disziplin-Affinitaet (Multiplikator aufs genetische
+  // --- Rassen. `aff` = Disziplin-Affinität (Multiplikator aufs genetische
   //     Potenzial). `conf` = typischer Exterieur-Mittelwert. `af` =
-  //     Allel-Frequenzen fuer die Farbgenetik (realistisch pro Rasse:
+  //     Allel-Frequenzen für die Farbgenetik (realistisch pro Rasse:
   //     Friese fast nur Rappe, Haflinger Fuchs mit hellem Langhaar, Araber
-  //     kein Tobiano/kein Cream, dafuer oft Grey, ...).
+  //     kein Tobiano/kein Cream, dafür oft Grey, ...).
   const DISCIPLINES = ['Dressur', 'Springen', 'Galopprennen', 'Vielseitigkeit', 'Distanzritt', 'Fahren'];
 
   const BREEDS = {
@@ -85,7 +85,7 @@ const Names = (function () {
         CH: { Ch: 0.03, n: 0.97 }, RN: { Rn: 0.12, n: 0.88 }, TO: { TO: 0.05, n: 0.95 },
         O: { O: 0.06, n: 0.94 }, SW: { SW1: 0.08, n: 0.92 }, LP: { LP: 0.02, n: 0.98 } },
     },
-    'Islaender': {
+    'Isländer': {
       conf: 68, value: 0.85,
       aff: { Dressur: 0.8, Springen: 0.6, Galopprennen: 0.75, Vielseitigkeit: 0.8, Distanzritt: 1.2, Fahren: 0.95 },
       af: { E: { E: 0.5, e: 0.5 }, A: { A: 0.55, a: 0.45 }, G: { G: 0.12, n: 0.88 },

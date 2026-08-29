@@ -1,6 +1,6 @@
 /* ============================================================================
-   Oberflaeche: Tab-Router, Rendering pro Ansicht, Event-Delegation.
-   Globales `UI`. Haengt an `Game`, `Model`, `Economy`, `Genetics`, `Names`.
+   Oberfläche: Tab-Router, Rendering pro Ansicht, Event-Delegation.
+   Globales `UI`. Hängt an `Game`, `Model`, `Economy`, `Genetics`, `Names`.
    ========================================================================== */
 const UI = (function () {
   'use strict';
@@ -9,7 +9,7 @@ const UI = (function () {
   const fmt = Economy.fmtEur;
   const DISC = Model.DISC;
 
-  let currentTab = 'gestuet';
+  let currentTab = 'gestüt';
   let selectedId = null;      // Stall-Detailansicht
   let breedSire = null, breedDam = null;
 
@@ -85,7 +85,7 @@ const UI = (function () {
     renderTopbar();
     if (!Game.state) return;
     const el = $('#view');
-    const fn = views[currentTab] || views.gestuet;
+    const fn = views[currentTab] || views.gestüt;
     el.innerHTML = fn();
   }
 
@@ -94,8 +94,8 @@ const UI = (function () {
   // ======================================================================
   const views = {};
 
-  // --- 🏡 Gestuet --------------------------------------------------------
-  views.gestuet = function () {
+  // --- 🏡 Gestüt --------------------------------------------------------
+  views.gestüt = function () {
     const s = Game.state;
     const tier = Economy.prestigeTier(s);
     const upkeep = Economy.weeklyUpkeep(s);
@@ -122,9 +122,9 @@ const UI = (function () {
           <h3>${esc(s.studName)} <button class="small secondary" data-action="rename-stud">umbenennen</button></h3>
           <div class="row between"><span>Rang</span><b>${esc(tier.name)} <span class="stars">${'★'.repeat(tier.stars)}</span></b></div>
           <div class="row between"><span>Kasse</span><b class="${s.cash < 0 ? 'tag warn' : ''}">${fmt(s.cash)}</b></div>
-          <div class="row between"><span>Pferde</span><b>${s.horses.length} / ${Economy.stallCapacity(s)} Plaetze</b></div>
+          <div class="row between"><span>Pferde</span><b>${s.horses.length} / ${Economy.stallCapacity(s)} Plätze</b></div>
           <div class="row between"><span>Wochenunterhalt</span><b>${fmt(upkeep)}</b></div>
-          <div class="row between"><span>Gezuechtete Fohlen</span><b>${s.stats.foalsBred}</b></div>
+          <div class="row between"><span>Gezüchtete Fohlen</span><b>${s.stats.foalsBred}</b></div>
           <div class="row between"><span>Verkaufte Pferde</span><b>${s.stats.horsesSold}</b></div>
           <div class="row between"><span>Turniersiege</span><b>${s.stats.showWins}</b></div>
           ${offer ? `<div class="card" style="border-color:var(--warn)">
@@ -143,7 +143,7 @@ const UI = (function () {
 
       <div class="grid cols-2" style="margin-top:1rem">
         <div class="card">
-          <h3>Bestand (Kurzuebersicht)</h3>
+          <h3>Bestand (Kurzübersicht)</h3>
           ${herdMiniTable()}
         </div>
         <div class="card">
@@ -242,6 +242,7 @@ const UI = (function () {
           <h3 style="margin:0">${esc(h.name)} <button class="small secondary" data-action="rename-horse" data-id="${h.id}">✎</button></h3>
           <span class="muted small">${sexIcon(h)} · ${ageStr(h)}</span>
         </div>
+        <div class="small muted">${esc(h.breed)}${(h.isMix || Model.isMixBreed(h.breed)) ? ' <span class="tag warn">Mix – kein Zuchtbuch</span>' : ''}</div>
         ${parents}
         <div><b>${esc(pheno.display)}</b> ${rarityTag(h)} ${pheno.blueEyes ? '<span class="tag">blaue Augen</span>' : ''}</div>
         <div class="geno-tokens">${esc(pheno.tokens)}</div>
@@ -251,7 +252,7 @@ const UI = (function () {
           ${statLines}
         </div>
         <div class="statline"><span>Exterieur</span>${plainBar(h.conformation)}<span></span></div>
-        <div class="statline"><span>Temperament</span>${plainBar(h.temperament)}<span></span></div>
+        <div class="statline"><span title="Charakter / Rittigkeit">Interieur</span>${plainBar(h.temperament)}<span></span></div>
         <div class="statline"><span>Gesundheit</span>${plainBar(h.health, h.health < 60 ? 'danger' : '')}<span></span></div>
         <div class="statline"><span>Energie</span>${plainBar(h.energy, 'warn')}<span></span></div>
 
@@ -277,40 +278,97 @@ const UI = (function () {
   }
 
   // --- 🧬 Zucht --------------------------------------------------------
+  function sireExists(id) {
+    if (Game.getHorse(id)) return true;
+    return (Game.state.studRoster || []).some((x) => x.horse.id === id);
+  }
+  function resolveSireHorse(id) {
+    const own = Game.getHorse(id);
+    if (own) return own;
+    const e = (Game.state.studRoster || []).find((x) => x.horse.id === id);
+    return e ? e.horse : null;
+  }
+
+  // Erwartungswert-Tabelle einer Anpaarung.
+  function forecastTable(fc) {
+    const cell = (o) => `<td class="right">${o.parentMean == null ? '–' : o.parentMean}</td>` +
+      `<td class="right"><b>${o.expect}</b></td>` +
+      `<td class="right muted small">${Math.round(o.min)}–${Math.round(o.max)}</td>`;
+    let rows = DISC.map((d) => `<tr><td>${d}</td>${cell(fc.begabungen[d])}</tr>`).join('');
+    rows += `<tr><td><b>Exterieur</b></td>${cell(fc.exterieur)}</tr>`;
+    rows += `<tr><td><b>Interieur</b></td>${cell(fc.interieur)}</tr>`;
+    rows += `<tr><td><b>Gesundheit</b></td>${cell(Object.assign({ parentMean: null }, fc.gesundheit))}</tr>`;
+    return `<table class="small"><thead><tr><th>Wert</th><th class="right">Ø Eltern</th><th class="right">Erwartung</th><th class="right">Streubereich</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
   views.zucht = function () {
     const s = Game.state;
     const stallions = s.horses.filter((h) => h.sex === 'hengst' && ageYears(h) >= Model.MATURITY_YEARS);
     const mares = s.horses.filter((h) => h.sex === 'stute' && ageYears(h) >= Model.MATURITY_YEARS && !h.pregnancy);
+    const roster = s.studRoster || [];
 
-    if (breedSire && !Game.getHorse(breedSire)) breedSire = null;
+    if (breedSire && !sireExists(breedSire)) breedSire = null;
     if (breedDam && !Game.getHorse(breedDam)) breedDam = null;
 
-    const opt = (list, sel) => ['<option value="">— wählen —</option>'].concat(
-      list.map((h) => '<option value="' + h.id + '"' + (sel === h.id ? ' selected' : '') + '>' +
+    const mareOpt = ['<option value="">— Stute wählen —</option>'].concat(
+      mares.map((h) => '<option value="' + h.id + '"' + (breedDam === h.id ? ' selected' : '') + '>' +
         esc(h.name) + ' (' + esc(h.breed) + ', ' + phenoOf(h).base + ', ' + ageYears(h).toFixed(0) + 'J.)</option>')
     ).join('');
+
+    const sireOwn = stallions.map((h) => '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
+      esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + '</option>').join('');
+    const sireStud = roster.map((x) => {
+      const h = x.horse;
+      return '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
+        esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' +
+        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')</option>';
+    }).join('');
+    const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
+      (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
+      (sireStud ? '<optgroup label="Deckstation (fremde Hengste)">' + sireStud + '</optgroup>' : '') +
+      '</select>';
 
     const pregnant = s.horses.filter((h) => h.pregnancy);
     const pregHtml = pregnant.length
       ? '<div class="card"><h3>Tragende Stuten</h3>' + pregnant.map((h) =>
-        '<div class="row between"><span>' + esc(h.name) + ' × ' + esc(h.pregnancy.sireName) + '</span><b>noch ' +
+        '<div class="row between"><span>' + esc(h.name) + ' × ' + esc(h.pregnancy.sireName) +
+        (h.pregnancy.external ? ' <span class="tag">Deckstation</span>' : '') + '</span><b>noch ' +
         h.pregnancy.weeksLeft + ' Wochen</b></div>').join('') + '</div>'
       : '';
 
-    let planHtml = '<p class="muted">Hengst und Stute wählen, dann „Vorschau berechnen".</p>';
+    let planHtml = '<p class="muted">Hengst und Stute wählen — die Vorschau rechnet sofort.</p>';
     if (breedSire && breedDam) {
       const plan = Game.planBreeding(breedSire, breedDam);
       if (plan.error) planHtml = '<p class="tag warn">' + esc(plan.error) + '</p>';
       else {
+        const fc = plan.statForecast;
         const coiPct = (plan.coi * 100).toFixed(1);
         const coiCls = plan.coi >= 0.125 ? 'warn' : plan.coi >= 0.0625 ? '' : 'good';
+        // Vergleich Fohlen-Erwartung gegen die Stute (welcher Hengst passt?).
+        const dam = plan.dam;
+        const deltas = DISC.map((d) => ({ d: d, v: fc.begabungen[d].expect - dam.potential[d] }));
+        const ups = deltas.filter((x) => x.v >= 3).sort((a, b) => b.v - a.v);
+        const downs = deltas.filter((x) => x.v <= -3).sort((a, b) => a.v - b.v);
+        const eign = (ups.length || downs.length)
+          ? '<div class="small">Gegenüber der Stute: ' +
+            (ups.length ? '<span class="tag good">↑ ' + ups.map((x) => x.d + ' +' + x.v).join(', ') + '</span> ' : '') +
+            (downs.length ? '<span class="tag warn">↓ ' + downs.map((x) => x.d + ' ' + x.v).join(', ') + '</span>' : '') +
+            '</div>'
+          : '<div class="small muted">Begabungen etwa auf Stutenniveau.</div>';
+
         planHtml = `
-          <div class="row between"><span>Inzuchtkoeffizient (COI) des Fohlens</span><b class="tag ${coiCls}">${coiPct}%</b></div>
-          ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — deutliche Abzüge bei Gesundheit, Potenzial und Fruchtbarkeit.</p>' : ''}
+          <div class="row between"><span>Fohlenrasse</span><b>${esc(fc.foalBreed)}</b></div>
+          ${fc.mix ? '<p class="small tag warn">Rassenkreuzung: „Mix" hat kein Zuchtbuch — Marktwert rund −50 %, Zuchtschau-Malus, Begabungen im Schnitt niedriger.</p>' : ''}
+          <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
+          ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — spürbare Abzüge bei Gesundheit, Begabungen und Fruchtbarkeit.</p>' : ''}
           <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b></div>
-          <div class="row between"><span>Deckgebühr</span><b>${fmt(plan.fee)}</b></div>
-          <div class="row between"><span>„letale" Fohlen (OLWS / Roan-homozygot)</span><b>${plan.forecast.lethalPct}%</b></div>
-          <p style="margin:.5rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel-Simulation, erwachsen bewertet)</span></p>
+          <div class="row between"><span>Deckgebühr${plan.external ? ' (Deckstation)' : ''}</span><b>${fmt(plan.fee)}</b></div>
+
+          <p style="margin:.6rem 0 .2rem"><b>Erwartete Fohlenwerte</b> <span class="muted small">(Ø Eltern → Erwartung, mit COI-/Mix-Abzug)</span></p>
+          ${forecastTable(fc)}
+          ${eign}
+
+          <p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel-Simulation)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
           <ul class="foal-forecast small">
             ${plan.forecast.outcomes.map((o) => '<li>' + o.pct + ' %&nbsp; ' + esc(o.label) + '</li>').join('')}
           </ul>
@@ -318,35 +376,56 @@ const UI = (function () {
       }
     }
 
+    // Deckstation-Übersicht
+    const studCards = roster.map((x) => {
+      const h = x.horse;
+      const best = Model.bestDiscipline(h);
+      return `<tr class="clickable" data-action="pick-stud" data-id="${h.id}">
+        <td><b>${esc(h.name)}</b><br><span class="muted small">${esc(h.breed)}${x.elite ? ' · <span class="tag rare">Spitzenvererber</span>' : ''}</span></td>
+        <td class="small">${esc(phenoOf(h).base)}<br>${ageYears(h).toFixed(0)} J.</td>
+        <td class="small">Ext. ${Math.round(h.conformation)}<br>Int. ${Math.round(h.temperament)}</td>
+        <td class="small">${best} ${Math.round(h.potential[best])}<br><span class="muted">Begabungen</span></td>
+        <td class="right"><b>${fmt(x.studFee)}</b><br><span class="muted small">Deckgeld</span></td>
+      </tr>`;
+    }).join('');
+
     return `
       <div class="grid cols-2">
         <div class="card stack">
           <h3>Zuchtplaner</h3>
-          ${stallions.length ? '' : '<p class="tag warn">Kein deckfähiger Hengst (≥ 3 Jahre) im Stall.</p>'}
           ${mares.length ? '' : '<p class="tag warn">Keine deckbereite Stute (≥ 3 Jahre, nicht tragend) im Stall.</p>'}
-          <label class="small">Hengst
-            <select data-action="pick-sire">${opt(stallions, breedSire)}</select>
+          <label class="small">Hengst (eigener oder Deckstation)
+            ${sireSelect}
           </label>
           <label class="small">Stute
-            <select data-action="pick-dam">${opt(mares, breedDam)}</select>
+            <select data-action="pick-dam">${mareOpt}</select>
           </label>
-          <div class="small muted">Tragezeit ${Model.GESTATION_WEEKS} Wochen. Vererbung: pro Genort je 1 Allel von Vater und Mutter (Mendel).</div>
+          <div class="small muted">Tragezeit ${Model.GESTATION_WEEKS} Wochen. Farbe: je Genort 1 Allel von Vater + Mutter (Mendel).
+          Werte: Erwartung = Ø Eltern, leicht Richtung 50 gezogen, minus COI- und Mix-Abzug; dann Zufallsstreuung.</div>
         </div>
         <div class="card stack">
           <h3>Vorschau</h3>
           ${planHtml}
         </div>
       </div>
+
       ${pregHtml ? '<div style="margin-top:1rem">' + pregHtml + '</div>' : ''}
+
       <div class="card" style="margin-top:1rem">
-        <h3>Wie die Genetik funktioniert</h3>
+        <h3>🏇 Deckstation</h3>
+        <p class="small muted">Fremde Hengste gegen Deckgeld — auch ohne eigenen Spitzenhengst. Zeile anklicken = als Hengst übernehmen. Roster wechselt alle 6 Wochen (nächster: Woche ${s.nextStudWeek || 0}).</p>
+        <table><thead><tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Begabung</th><th class="right">Deckgeld</th></tr></thead><tbody>${studCards}</tbody></table>
+      </div>
+
+      <div class="card" style="margin-top:1rem">
+        <h3>Wie die Werte vererbt werden</h3>
         <p class="small muted">
-          15 Genorte: Extension (E/e) &amp; Agouti (A/a) bestimmen die Basisfarbe
-          (Fuchs / Brauner / Rappe). Aufhellungen: Cream &amp; Pearl (ein Genort),
-          Dun, Champagne, Silver. Muster/Scheckung: Grey (schimmelt mit dem Alter aus),
-          Tobiano, Frame Overo (homozygot letal → Fohlen stirbt), Splashed White,
-          Sabino 1, W20, Leopard-Komplex + PATN1. Homozygot Roan wird als sehr
-          früher Verlust behandelt (klassische Spielregel).
+          <b>Begabungen</b> (6 Disziplinen), <b>Exterieur</b> und <b>Interieur</b> (Charakter) erben nach:
+          <em>Erwartung = Ø der Elternwerte × 0,94 + 50 × 0,06 − COI-Abzug − Mix-Abzug</em>, dann eine
+          Zufallsstreuung (Begabung ±6, Exterieur ±4, Interieur ±9). Der 6-%-Zug zur Mitte („Regression")
+          heißt: zwei Spitzenpferde geben im Schnitt ein minimal schwächeres Fohlen — du musst weiter aufwerten.
+          <b>Gesundheit</b> startet bei ~96 und wird fast nur durch Inzucht gedrückt (COI × 72).
+          <b>Farbe</b> ist reine Mendel-Vererbung je Genort; homozygotes Frame Overo / Roan ist letal.
         </p>
       </div>`;
   };
@@ -435,10 +514,10 @@ const UI = (function () {
       const h = o.horse;
       const best = Model.bestDiscipline(h);
       return `<div class="card stack">
-        <div class="row between"><b>${esc(h.name)}</b><span class="tag">${esc(h.breed)}</span></div>
+        <div class="row between"><b>${esc(h.name)}</b><span class="tag${(h.isMix || Model.isMixBreed(h.breed)) ? ' warn' : ''}">${esc(h.breed)}</span></div>
         <div class="small muted">${sexIcon(h)} · ${ageYears(h).toFixed(1)} J. · ${esc(phenoOf(h).display)} ${rarityTag(h)}</div>
         <div class="geno-tokens">${esc(phenoOf(h).tokens)}</div>
-        <div class="small">Exterieur ${Math.round(h.conformation)} · Temperament ${Math.round(h.temperament)} · Gesundheit ${Math.round(h.health)}</div>
+        <div class="small">Exterieur ${Math.round(h.conformation)} · Interieur ${Math.round(h.temperament)} · Gesundheit ${Math.round(h.health)}</div>
         <div class="statline"><span>${best}</span>${bar(h.skill[best], h.potential[best])}<span class="right">${Math.round(h.potential[best])}</span></div>
         <div class="row between"><span>Preis</span><b>${fmt(o.price)}</b> <span class="muted small">(Schätzwert ${fmt(Game.valuation(h))})</span></div>
         <button class="small" data-action="buy-market" data-idx="${i}" ${s.cash < o.price || Game.stallFree() < 1 ? 'disabled' : ''}>Kaufen</button>
@@ -508,6 +587,8 @@ const UI = (function () {
     const s = Game.state;
 
     if (a === 'select-horse') { selectedId = el.dataset.id; render(); return; }
+
+    if (a === 'pick-stud') { breedSire = el.dataset.id; showTab('zucht'); toast('Hengst aus Deckstation gewählt.'); return; }
 
     if (a === 'rename-horse') {
       const h = Game.getHorse(el.dataset.id);
@@ -596,16 +677,16 @@ const UI = (function () {
     $('#btn-new').addEventListener('click', () => {
       Game.newGame($('#new-stud-name').value.trim());
       $('#start-overlay').hidden = true;
-      showTab('gestuet');
+      showTab('gestüt');
     });
     $('#btn-continue').addEventListener('click', () => {
-      if (Game.load()) { $('#start-overlay').hidden = true; showTab('gestuet'); }
+      if (Game.load()) { $('#start-overlay').hidden = true; showTab('gestüt'); }
       else toast('Kein Spielstand gefunden.', true);
     });
     $('#btn-import').addEventListener('click', () => {
       try {
         Game.importSave($('#import-text').value);
-        $('#start-overlay').hidden = true; showTab('gestuet');
+        $('#start-overlay').hidden = true; showTab('gestüt');
       } catch (err) { toast('Import fehlgeschlagen: ' + err.message, true); }
     });
   }

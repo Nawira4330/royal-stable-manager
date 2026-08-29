@@ -1,6 +1,6 @@
-/* Eigenstaendiges Stylesheet fuer das Gestuetsspiel. Farbwelt an das
+/* Eigenständiges Stylesheet für das Gestütsspiel. Farbwelt an das
    Schwesterprojekt angelehnt (dunkles Navy + Teal-Akzent), aber ohne
-   Abhaengigkeit von dessen style.css. Hell/Dunkel ueber prefers-color-scheme. */
+   Abhängigkeit von dessen style.css. Hell/Dunkel über prefers-color-scheme. */
 @import url('https://fonts.googleapis.com/css2?family=Courgette&family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {

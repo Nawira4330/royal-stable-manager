@@ -5,7 +5,7 @@
 const Game = (function () {
   'use strict';
 
-  const SAVE_KEY = 'gestuetsspiel_save_v1';
+  const SAVE_KEY = 'gestuetsspiel_save_v1';   // interner Schlüssel, bewusst ASCII
   const clamp = Model.clamp;
   const DISC = Model.DISC;
 
@@ -22,7 +22,7 @@ const Game = (function () {
   // --- Neues Spiel.
   function newGame(studName) {
     state = {
-      version: 1,
+      version: 2,
       studName: studName || Names.randStudName(),
       week: 0,
       cash: 60000,
@@ -30,23 +30,26 @@ const Game = (function () {
       facilities: { stalls: 0, arena: 0, vet: 0, marketing: 0 },
       horses: [],
       market: [],
+      studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
       auction: { lots: [], nextWeek: 2 },
       shows: [],
       saleListings: [],   // { horseId, price, weeks }
       eventLog: [],
       nextMarketWeek: 0,
       nextShowWeek: 0,
+      nextStudWeek: 0,
       stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0 },
     };
 
     // Startbestand: 1 Hengst, 3 Stuten, gemischte Rassen.
-    const startBreeds = ['Deutsches Sportpferd', 'Hannoveraner', 'Islaender', 'Araber'];
+    const startBreeds = ['Deutsches Sportpferd', 'Hannoveraner', 'Isländer', 'Araber'];
     state.horses.push(Model.generateHorse({ sex: 'hengst', breed: startBreeds[0], quality: 0.55, ageYears: 6, currentWeek: 0, origin: 'Startbestand' }));
     for (let i = 1; i < 4; i++) {
       state.horses.push(Model.generateHorse({ sex: 'stute', breed: startBreeds[i], quality: 0.45 + Math.random() * 0.2, ageYears: 4 + Math.random() * 5, currentWeek: 0, origin: 'Startbestand' }));
     }
 
     state.market = Economy.rollMarket(state);
+    state.studRoster = Economy.rollStudRoster(state);
     state.shows = Economy.rollShows(state);
     state.auction.lots = Economy.rollAuction(state);
     log('Willkommen auf ' + state.studName + '! Startkapital: ' + Economy.fmtEur(state.cash) + '.', 'good');
@@ -75,13 +78,25 @@ const Game = (function () {
   function exportSave() { return JSON.stringify(state, null, 2); }
   function importSave(text) {
     const parsed = JSON.parse(text);
-    if (!parsed || !Array.isArray(parsed.horses)) throw new Error('Ungueltiger Spielstand.');
+    if (!parsed || !Array.isArray(parsed.horses)) throw new Error('Ungültiger Spielstand.');
     state = parsed; save(); emit(); return true;
   }
   function wipe() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} state = null; }
 
   // --- Helfer.
   function getHorse(id) { return state.horses.find((h) => h.id === id) || null; }
+
+  // Löst eine Hengst-Auswahl auf: entweder ein eigenes Pferd oder ein
+  // Hengst aus der Deckstation. Gibt { horse, external, fee } zurück.
+  function findSire(id) {
+    const own = getHorse(id);
+    if (own) {
+      return { horse: own, external: false, fee: 800 + Math.round(Model.valuation(own, state.week, 1) * 0.03) };
+    }
+    const entry = (state.studRoster || []).find((x) => x.horse.id === id);
+    if (entry) return { horse: entry.horse, external: true, fee: entry.studFee };
+    return null;
+  }
   function stallFree() { return Economy.stallCapacity(state) - state.horses.length; }
   function valuation(h) { return Model.valuation(h, state.week, Economy.prestigeMult(state)); }
 
@@ -108,15 +123,15 @@ const Game = (function () {
 
   function buyMarketHorse(index) {
     const offer = state.market[index];
-    if (!offer) return { ok: false, msg: 'Angebot nicht mehr verfuegbar.' };
-    if (stallFree() < 1) return { ok: false, msg: 'Kein freier Stallplatz. Baue Stallplaetze aus oder verkaufe ein Pferd.' };
+    if (!offer) return { ok: false, msg: 'Angebot nicht mehr verfügbar.' };
+    if (stallFree() < 1) return { ok: false, msg: 'Kein freier Stallplatz. Baue Stallplätze aus oder verkaufe ein Pferd.' };
     if (state.cash < offer.price) return { ok: false, msg: 'Nicht genug Geld.' };
     state.cash -= offer.price;
     offer.horse.acquiredWeek = state.week;
     offer.horse.origin = 'Marktkauf';
     state.horses.push(offer.horse);
     state.market.splice(index, 1);
-    log('Gekauft: ' + offer.horse.name + ' (' + offer.horse.breed + ') fuer ' + Economy.fmtEur(offer.price) + '.', 'cost');
+    log('Gekauft: ' + offer.horse.name + ' (' + offer.horse.breed + ') für ' + Economy.fmtEur(offer.price) + '.', 'cost');
     save(); emit();
     return { ok: true };
   }
@@ -124,11 +139,11 @@ const Game = (function () {
   function listForSale(horseId, price) {
     const h = getHorse(horseId);
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
-    if (h.pregnancy) return { ok: false, msg: 'Traechtige Stute - erst nach der Geburt verkaufen (oder in die Auktion geben).' };
+    if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute - erst nach der Geburt verkaufen (oder in die Auktion geben).' };
     if (state.saleListings.some((s) => s.horseId === horseId)) return { ok: false, msg: 'Steht bereits zum Verkauf.' };
     state.saleListings.push({ horseId: horseId, price: Math.max(100, Math.round(price)), weeks: 0 });
     h.forSale = { price: Math.round(price) };
-    log(h.name + ' zum Verkauf angeboten fuer ' + Economy.fmtEur(price) + '.', 'info');
+    log(h.name + ' zum Verkauf angeboten für ' + Economy.fmtEur(price) + '.', 'info');
     save(); emit();
     return { ok: true };
   }
@@ -146,12 +161,12 @@ const Game = (function () {
   }
 
   function euthanizeOrSellQuick(horseId) {
-    // "Schnellverkauf" zum halben Schaetzwert an einen Haendler.
+    // "Schnellverkauf" zum halben Schätzwert an einen Händler.
     const h = getHorse(horseId);
     if (!h) return { ok: false };
     const v = Math.round(valuation(h) * 0.5);
     removeHorse(horseId);
-    addCash(v, 'Schnellverkauf ' + h.name + ' an Haendler');
+    addCash(v, 'Schnellverkauf ' + h.name + ' an Händler');
     state.stats.horsesSold++;
     save(); emit();
     return { ok: true, amount: v };
@@ -164,20 +179,22 @@ const Game = (function () {
 
   // --- Zucht.
   function planBreeding(sireId, damId) {
-    const sire = getHorse(sireId), dam = getHorse(damId);
-    if (!sire || !dam) return { error: 'Bitte Hengst und Stute waehlen.' };
-    if (sire.sex !== 'hengst') return { error: sire.name + ' ist kein Hengst.' };
+    const sr = findSire(sireId);
+    const dam = getHorse(damId);
+    if (!sr || !dam) return { error: 'Bitte Hengst und Stute wählen.' };
+    const sire = sr.horse;
     if (dam.sex !== 'stute') return { error: dam.name + ' ist keine Stute.' };
-    if (dam.pregnancy) return { error: dam.name + ' ist bereits traechtig.' };
+    if (dam.pregnancy) return { error: dam.name + ' ist bereits trächtig.' };
     const sy = Model.ageYears(sire, state.week), dy = Model.ageYears(dam, state.week);
     if (sy < Model.MATURITY_YEARS) return { error: sire.name + ' ist mit ' + sy.toFixed(1) + ' Jahren zu jung.' };
     if (dy < Model.MATURITY_YEARS) return { error: dam.name + ' ist mit ' + dy.toFixed(1) + ' Jahren zu jung.' };
-    if (dy > Model.MAX_BREED_AGE) return { error: dam.name + ' ist zu alt fuer die Zucht.' };
+    if (dy > Model.MAX_BREED_AGE) return { error: dam.name + ' ist zu alt für die Zucht.' };
 
     const coi = Model.inbreedingCoefficient(sire, dam);
     const forecast = Genetics.foalColorForecast(sire.genotype, dam.genotype);
-    const fee = 800 + Math.round((Model.valuation(sire, state.week, 1)) * 0.03);
-    // Empfaengnis-Wahrscheinlichkeit.
+    const statForecast = Model.foalStatForecast(sire, dam);
+    const fee = sr.fee;
+    // Empfängnis-Wahrscheinlichkeit.
     const vet = Economy.facLevel(state, 'vet');
     let chance = 0.72 * vet.fert;
     chance *= clamp(1 - (dy - 12) * 0.05, 0.3, 1);        // Stutenalter
@@ -186,7 +203,8 @@ const Game = (function () {
     chance = clamp(chance, 0.15, 0.95);
 
     return {
-      sire: sire, dam: dam, coi: coi, forecast: forecast,
+      sire: sire, dam: dam, external: sr.external, coi: coi,
+      forecast: forecast, statForecast: statForecast,
       fee: fee, conceiveChance: chance,
     };
   }
@@ -194,17 +212,26 @@ const Game = (function () {
   function doBreeding(sireId, damId) {
     const plan = planBreeding(sireId, damId);
     if (plan.error) return { ok: false, msg: plan.error };
-    if (state.cash < plan.fee) return { ok: false, msg: 'Deckgebuehr ' + Economy.fmtEur(plan.fee) + ' nicht bezahlbar.' };
+    if (state.cash < plan.fee) return { ok: false, msg: 'Deckgebühr ' + Economy.fmtEur(plan.fee) + ' nicht bezahlbar.' };
     state.cash -= plan.fee;
-    log('Deckakt ' + plan.dam.name + ' x ' + plan.sire.name + ' (Gebuehr ' + Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%).', 'cost');
+    log('Deckakt ' + plan.dam.name + ' × ' + plan.sire.name +
+      (plan.external ? ' (Deckstation)' : '') +
+      ' - Gebühr ' + Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%.', 'cost');
 
     if (Math.random() > plan.conceiveChance) {
-      log('Die Bedeckung war nicht erfolgreich - ' + plan.dam.name + ' ist nicht traechtig geworden.', 'warn');
+      log('Die Bedeckung war nicht erfolgreich - ' + plan.dam.name + ' ist nicht trächtig geworden.', 'warn');
       save(); emit();
       return { ok: true, conceived: false };
     }
-    plan.dam.pregnancy = { sireId: sireId, sireName: plan.sire.name, weeksLeft: Model.GESTATION_WEEKS };
-    log(plan.dam.name + ' ist traechtig! Abfohlung in ' + Model.GESTATION_WEEKS + ' Wochen.', 'good');
+    // Steckbrief des Hengstes einfrieren, damit das Fohlen korrekt erbt.
+    plan.dam.pregnancy = {
+      sireId: plan.sire.id,
+      sireName: plan.sire.name,
+      external: !!plan.external,
+      sireSnapshot: Model.parentSnapshot(plan.sire),
+      weeksLeft: Model.GESTATION_WEEKS,
+    };
+    log(plan.dam.name + ' ist trächtig! Abfohlung in ' + Model.GESTATION_WEEKS + ' Wochen.', 'good');
     save(); emit();
     return { ok: true, conceived: true };
   }
@@ -219,7 +246,7 @@ const Game = (function () {
     const lot = state.auction.lots[lotIndex];
     if (!lot) return { ok: false, msg: 'Los nicht gefunden.' };
     if (lot.consignedByPlayer) return { ok: false, msg: 'Auf eigene Lose kannst du nicht bieten.' };
-    if (amount > state.cash) return { ok: false, msg: 'Dein Gebot uebersteigt dein Guthaben.' };
+    if (amount > state.cash) return { ok: false, msg: 'Dein Gebot übersteigt dein Guthaben.' };
     const res = Economy.placeBid(lot, amount);
     if (res.ok) { save(); emit(); }
     return res;
@@ -239,7 +266,7 @@ const Game = (function () {
       closed: false,
       consignedByPlayer: true,
     });
-    log(h.name + ' in die naechste Auktion eingeliefert (Limit ' + Economy.fmtEur(reserve || est * 0.6) + ').', 'info');
+    log(h.name + ' in die nächste Auktion eingeliefert (Limit ' + Economy.fmtEur(reserve || est * 0.6) + ').', 'info');
     save(); emit();
     return { ok: true };
   }
@@ -252,11 +279,11 @@ const Game = (function () {
     if (show.done) return { ok: false, msg: 'Schau ist vorbei.' };
     if (show.entered.indexOf(horseId) !== -1) return { ok: false, msg: 'Schon genannt.' };
     if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung (< 3 Jahre).' };
-    if (h.pregnancy && show.type === 'sport') return { ok: false, msg: 'Traechtige Stuten starten nicht im Sport.' };
+    if (h.pregnancy && show.type === 'sport') return { ok: false, msg: 'Trächtige Stuten starten nicht im Sport.' };
     if (state.cash < show.entryFee) return { ok: false, msg: 'Nenngeld nicht bezahlbar.' };
     state.cash -= show.entryFee;
     show.entered.push(horseId);
-    log('Genannt: ' + h.name + ' fuer ' + show.name + ' (Nenngeld ' + Economy.fmtEur(show.entryFee) + ').', 'cost');
+    log('Genannt: ' + h.name + ' für ' + show.name + ' (Nenngeld ' + Economy.fmtEur(show.entryFee) + ').', 'cost');
     save(); emit();
     return { ok: true };
   }
@@ -300,7 +327,7 @@ const Game = (function () {
         log(h.name + ' ist im Alter von ' + y.toFixed(0) + ' Jahren friedlich eingeschlafen.', 'warn');
         h._dead = true;
       }
-      // Traechtigkeit
+      // Trächtigkeit
       if (h.pregnancy) {
         h.pregnancy.weeksLeft -= 1;
         if (h.pregnancy.weeksLeft <= 0) births.push(h);
@@ -311,11 +338,15 @@ const Game = (function () {
 
     // 2) Geburten.
     births.forEach((dam) => {
-      const sire = getHorse(dam.pregnancy.sireId) || { // Vater evtl. verkauft: Platzhalter aus gespeicherten Daten
-        id: dam.pregnancy.sireId, name: dam.pregnancy.sireName, sex: 'hengst',
-        breed: dam.breed, genotype: dam.genotype, potential: dam.potential, conformation: dam.conformation,
-        temperament: dam.temperament, quality: dam.quality, ancestors: {}, skill: {},
-      };
+      // Bevorzugt der bei der Bedeckung eingefrorene Steckbrief; sonst der
+      // Hengst im Stall; sonst (alte Spielstände) ein grober Platzhalter.
+      const sire = dam.pregnancy.sireSnapshot
+        || getHorse(dam.pregnancy.sireId)
+        || {
+          id: dam.pregnancy.sireId, name: dam.pregnancy.sireName, sex: 'hengst',
+          breed: dam.breed, genotype: dam.genotype, potential: dam.potential, conformation: dam.conformation,
+          temperament: dam.temperament, quality: dam.quality, ancestors: {}, skill: {},
+        };
       const result = Model.breed(sire, dam, state.week);
       dam.pregnancy = null;
       if (!result.alive) {
@@ -332,7 +363,7 @@ const Game = (function () {
       } else {
         const v = Math.round(Model.valuation(foal, state.week, Economy.prestigeMult(state)) * 0.7);
         state.cash += v;
-        log('Geburt: "' + foal.name + '" - kein Stallplatz frei, Fohlen direkt fuer ' + Economy.fmtEur(v) + ' verkauft.', 'info');
+        log('Geburt: "' + foal.name + '" - kein Stallplatz frei, Fohlen direkt für ' + Economy.fmtEur(v) + ' verkauft.', 'info');
       }
     });
 
@@ -344,7 +375,7 @@ const Game = (function () {
       s.weeks += 1;
       const val = valuation(h);
       const ratio = s.price / Math.max(1, val);
-      // Verkaufswahrscheinlichkeit sinkt mit ueberzogenem Preis, steigt mit Zeit/Marketing.
+      // Verkaufswahrscheinlichkeit sinkt mit überzogenem Preis, steigt mit Zeit/Marketing.
       let p = clamp(0.55 / Math.pow(ratio, 2.2), 0.02, 0.9) * mkt.saleSpeed;
       p = clamp(p + s.weeks * 0.03, 0, 0.95);
       if (Math.random() < p) {
@@ -352,7 +383,7 @@ const Game = (function () {
         state.cash += paid;
         state.stats.horsesSold += 1;
         state.stats.totalEarnings += paid;
-        log('Verkauft: ' + h.name + ' fuer ' + Economy.fmtEur(paid) + ' (nach ' + s.weeks + ' Wochen).', 'good');
+        log('Verkauft: ' + h.name + ' für ' + Economy.fmtEur(paid) + ' (nach ' + s.weeks + ' Wochen).', 'good');
         removeHorse(s.horseId);
       } else {
         stillListed.push(s);
@@ -378,7 +409,7 @@ const Game = (function () {
       }
     });
 
-    // 5) Auktion abschliessen, wenn faellig.
+    // 5) Auktion abschließen, wenn fällig.
     if (state.week >= state.auction.nextWeek) {
       const results = Economy.closeAuction(state, state.auction.lots);
       results.forEach((res) => {
@@ -388,9 +419,9 @@ const Game = (function () {
             state.cash -= res.amount;
             h.acquiredWeek = state.week; h.origin = 'Auktion';
             state.horses.push(h);
-            log('Auktion: ' + h.name + ' fuer ' + Economy.fmtEur(res.amount) + ' ersteigert.', 'cost');
+            log('Auktion: ' + h.name + ' für ' + Economy.fmtEur(res.amount) + ' ersteigert.', 'cost');
           } else {
-            log('Auktion: Zuschlag fuer ' + h.name + ' verfaellt (kein Platz oder kein Geld).', 'warn');
+            log('Auktion: Zuschlag für ' + h.name + ' verfällt (kein Platz oder kein Geld).', 'warn');
           }
         } else if (res.type === 'consign') {
           if (res.sold) {
@@ -398,9 +429,9 @@ const Game = (function () {
             state.stats.horsesSold += 1;
             state.stats.totalEarnings += res.amount;
             removeHorse(h.id);
-            log('Auktion: ' + h.name + ' fuer ' + Economy.fmtEur(res.amount) + ' verkauft.', 'good');
+            log('Auktion: ' + h.name + ' für ' + Economy.fmtEur(res.amount) + ' verkauft.', 'good');
           } else {
-            log('Auktion: ' + h.name + ' blieb unter Limit und kommt zurueck in den Stall.', 'warn');
+            log('Auktion: ' + h.name + ' blieb unter Limit und kommt zurück in den Stall.', 'warn');
           }
         }
       });
@@ -408,10 +439,14 @@ const Game = (function () {
       state.auction.nextWeek = state.week + 4;
     }
 
-    // 6) Markt & Schaukalender periodisch erneuern.
+    // 6) Markt, Deckstation & Schaukalender periodisch erneuern.
     if (state.week >= state.nextMarketWeek) {
       state.market = Economy.rollMarket(state);
       state.nextMarketWeek = state.week + 2;
+    }
+    if (state.week >= (state.nextStudWeek || 0)) {
+      state.studRoster = Economy.rollStudRoster(state);
+      state.nextStudWeek = state.week + 6;
     }
     if (state.shows.every((s) => s.done) || state.week >= state.nextShowWeek) {
       state.shows = Economy.rollShows(state);
@@ -451,15 +486,15 @@ const Game = (function () {
       const h = horses[Model.randInt(0, horses.length - 1)];
       const offer = Math.round(valuation(h) * (1.1 + Math.random() * 0.4));
       state._pendingOffer = { horseId: h.id, price: offer, week: state.week };
-      log('💌 Ein Interessent bietet ' + Economy.fmtEur(offer) + ' fuer ' + h.name + ' (Tab "Stall" -> Angebot annehmen).', 'info');
+      log('💌 Ein Interessent bietet ' + Economy.fmtEur(offer) + ' für ' + h.name + ' (Tab "Stall" -> Angebot annehmen).', 'info');
     } else if (roll < 0.75) {
       const bonus = 500 + Model.randInt(0, 1500);
       state.cash += bonus;
-      log('Ein Sponsor unterstuetzt dein Gestuet mit ' + Economy.fmtEur(bonus) + '.', 'good');
+      log('Ein Sponsor unterstützt dein Gestüt mit ' + Economy.fmtEur(bonus) + '.', 'good');
     } else if (horses.length) {
       const h = horses[Model.randInt(0, horses.length - 1)];
       h.temperament = clamp(h.temperament + Model.randInt(2, 6), 10, 99);
-      log(h.name + ' hat sich charakterlich gut entwickelt (+Temperament).', 'good');
+      log(h.name + ' hat sich charakterlich gut entwickelt (+Interieur).', 'good');
     }
   }
 
@@ -472,7 +507,7 @@ const Game = (function () {
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += o.price;
     removeHorse(o.horseId);
-    log('Angebot angenommen: ' + h.name + ' fuer ' + Economy.fmtEur(o.price) + ' verkauft.', 'good');
+    log('Angebot angenommen: ' + h.name + ' für ' + Economy.fmtEur(o.price) + ' verkauft.', 'good');
     state._pendingOffer = null;
     save(); emit();
     return { ok: true, amount: o.price };

@@ -1,0 +1,33 @@
+{
+  "name": "gestuetsspiel",
+  "productName": "Gestütsspiel",
+  "version": "0.2.0",
+  "description": "Pferdegestüt-Aufbauspiel mit echter Farbgenetik, Zucht, Training, Schauen und Auktionen. Läuft als Desktop-App (Electron).",
+  "main": "electron-main.js",
+  "author": "Nawira13",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "de.nawira13.gestuetsspiel",
+    "productName": "Gestütsspiel",
+    "files": ["index.html", "electron-main.js", "css/**", "js/**"],
+    "win": {
+      "target": ["nsis", "portable"],
+      "artifactName": "Gestuetsspiel-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Gestütsspiel"
+    }
+  }
+}

@@ -8,10 +8,10 @@ const Economy = (function () {
   const clamp = Model.clamp;
   const DISC = Model.DISC;
 
-  // --- Anlagen / Gebaeude. Jede Stufe: Kosten + Effekt. Stufe 0 = Startwert.
+  // --- Anlagen / Gebäude. Jede Stufe: Kosten + Effekt. Stufe 0 = Startwert.
   const FACILITIES = {
     stalls: {
-      label: 'Stallplaetze', unit: 'Plaetze',
+      label: 'Stallplätze', unit: 'Plätze',
       levels: [
         { cap: 6, upkeep: 0, cost: 0 },
         { cap: 10, upkeep: 120, cost: 8000 },
@@ -19,7 +19,7 @@ const Economy = (function () {
         { cap: 24, upkeep: 360, cost: 55000 },
         { cap: 40, upkeep: 600, cost: 120000 },
       ],
-      describe: (l) => l.cap + ' Plaetze',
+      describe: (l) => l.cap + ' Plätze',
     },
     arena: {
       label: 'Trainingsanlage', unit: 'Stufe',
@@ -68,10 +68,10 @@ const Economy = (function () {
   }
   function prestigeTier(state) {
     const p = state.prestige;
-    if (p >= 800) return { name: 'Elite-Gestuet', stars: 5 };
-    if (p >= 450) return { name: 'Renommiertes Gestuet', stars: 4 };
-    if (p >= 220) return { name: 'Etabliertes Gestuet', stars: 3 };
-    if (p >= 80) return { name: 'Aufstrebendes Gestuet', stars: 2 };
+    if (p >= 800) return { name: 'Elite-Gestüt', stars: 5 };
+    if (p >= 450) return { name: 'Renommiertes Gestüt', stars: 4 };
+    if (p >= 220) return { name: 'Etabliertes Gestüt', stars: 3 };
+    if (p >= 80) return { name: 'Aufstrebendes Gestüt', stars: 2 };
     return { name: 'Kleiner Hof', stars: 1 };
   }
 
@@ -90,6 +90,37 @@ const Economy = (function () {
     return list;
   }
 
+  // --- Deckstation: fremde Hengste, die gegen Deckgebühr zur Verfügung
+  //     stehen. So kann man ohne eigenen Spitzenhengst züchten. Der Hengst
+  //     kommt NICHT in den Stall; für die Vererbung wird bei der Bedeckung
+  //     ein Steckbrief in der Trächtigkeit gespeichert.
+  function rollStudRoster(state) {
+    const tier = prestigeTier(state).stars;
+    const n = 4 + Model.randInt(0, 2);
+    const roster = [];
+    // Eine Auswahl über verschiedene Rassen, plus (falls Prestige hoch) ein
+    // absoluter Spitzenvererber.
+    const breeds = Names.BREED_KEYS.slice();
+    for (let i = 0; i < n; i++) {
+      const elite = i === 0 && tier >= 3;
+      const q = elite
+        ? clamp(Model.gauss(0.9, 0.05), 0.75, 0.99)
+        : clamp(Model.gauss(0.55 + tier * 0.05, 0.16), 0.25, 0.97);
+      const breed = breeds[Model.randInt(0, breeds.length - 1)];
+      const h = Model.generateHorse({
+        sex: 'hengst', breed: breed, quality: q,
+        ageYears: 4 + Math.random() * 11, currentWeek: state.week, origin: 'Deckstation',
+      });
+      h.external = true;
+      const val = Model.valuation(h, state.week, prestigeMult(state));
+      // Deckgebühr: 5-12 % des Hengstwerts, Mindestbetrag steigt mit Qualität.
+      const fee = Math.max(600 + Math.round(q * 4000), Math.round(val * (0.05 + q * 0.07) / 50) * 50);
+      roster.push({ horse: h, studFee: fee, elite: elite });
+    }
+    roster.sort((a, b) => b.studFee - a.studFee);
+    return roster;
+  }
+
   // --- Auktion: Lose + KI-Bieter.
   function rollAuction(state) {
     const tier = prestigeTier(state).stars;
@@ -105,7 +136,7 @@ const Economy = (function () {
         startBid: Math.round(val * 0.4 / 50) * 50,
         currentBid: Math.round(val * 0.4 / 50) * 50,
         leader: null,
-        // KI-Maximalgebot: um den Schaetzwert herum gestreut.
+        // KI-Maximalgebot: um den Schätzwert herum gestreut.
         aiMax: Math.round(val * (0.7 + Math.random() * 0.7) / 50) * 50,
         closed: false,
         consignedByPlayer: false,
@@ -128,7 +159,7 @@ const Economy = (function () {
       lot.leader = 'ai';
       return { ok: true, msg: 'Geboten. Gegengebot der Konkurrenz: ' + fmtEur(lot.currentBid), outbid: true };
     }
-    return { ok: true, msg: 'Du fuehrst mit ' + fmtEur(amount) + '.', outbid: false };
+    return { ok: true, msg: 'Du führst mit ' + fmtEur(amount) + '.', outbid: false };
   }
 
   function bidIncrement(v) {
@@ -138,7 +169,7 @@ const Economy = (function () {
     return 2500;
   }
 
-  // Auktion abschliessen (beim Wochenwechsel).
+  // Auktion abschließen (beim Wochenwechsel).
   function closeAuction(state, lots) {
     const results = [];
     lots.forEach((lot) => {
@@ -196,7 +227,7 @@ const Economy = (function () {
     };
   }
 
-  // Wettkampf-Punktzahl eines Pferdes fuer eine Schau (0..~120).
+  // Wettkampf-Punktzahl eines Pferdes für eine Schau (0..~120).
   function scoreHorse(horse, show, currentWeek) {
     const y = Model.ageYears(horse, currentWeek);
     const af = Model.ageFactor(y);
@@ -211,17 +242,19 @@ const Economy = (function () {
         + form * 0.16;
     }
     // Zuchtschau: Exterieur + Typ (Rassewert) + Abstammung (Elternnamen bekannt?)
-    const bdef = Names.BREEDS[horse.breed] || { conf: 70 };
+    const bdef = Model.breedDef(horse.breed);
     const typeBonus = (horse.conformation - bdef.conf) * 0.2;
     const pedigreeBonus = (horse.sireName ? 4 : 0) + (horse.damName ? 4 : 0) + horse.wins * 1.5;
     const rarity = Genetics.describe(horse.genotype, y).rarity * 10;
+    // Mixe haben keinen Rassetyp und kein Zuchtbuch -> deutlicher Malus.
+    const mixMalus = (horse.isMix || Model.isMixBreed(horse.breed)) ? 20 : 0;
     return horse.conformation * 0.66
-      + typeBonus + pedigreeBonus + rarity
+      + typeBonus + pedigreeBonus + rarity - mixMalus
       + tempBonus + healthBonus * 0.5
       + form * 0.14;
   }
 
-  // Fuehrt eine Schau aus: Spielerpferde + KI-Feld, Platzierung, Preisgeld.
+  // Führt eine Schau aus: Spielerpferde + KI-Feld, Platzierung, Preisgeld.
   function runShow(state, show) {
     const field = [];
     show.entered.forEach((id) => {
@@ -237,7 +270,7 @@ const Economy = (function () {
     }
     field.sort((a, b) => b.score - a.score);
 
-    // Preisgeld: 40/25/15/12/8 % auf die ersten fuenf.
+    // Preisgeld: 40/25/15/12/8 % auf die ersten fünf.
     const split = [0.4, 0.25, 0.15, 0.12, 0.08];
     const results = field.map((f, idx) => {
       const place = idx + 1;
@@ -281,6 +314,7 @@ const Economy = (function () {
     prestigeMult: prestigeMult,
     prestigeTier: prestigeTier,
     rollMarket: rollMarket,
+    rollStudRoster: rollStudRoster,
     rollAuction: rollAuction,
     placeBid: placeBid,
     bidIncrement: bidIncrement,
