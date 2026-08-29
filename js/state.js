@@ -32,8 +32,10 @@ const Game = (function () {
       careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
       demand: Economy.initDemand(),   // Angebot & Nachfrage je Rasse/Disziplin
       friendCode: Friend.playerCode(),
-      friendStuds: [],    // per Tauschcode freigegebene Deckhengste von Freunden
-      redeemedCodes: [],  // Prüfsummen bereits eingelöster Codes
+      friendStuds: [],    // von Freunden übernommene Deckhengste
+      pendingOffers: [],  // eigene offene Verkaufsangebote { id, horseId, price, to }
+      pendingPurchases: [], // abgegebene Kaufgebote, auf Lieferung wartend
+      redeemedCodes: [],  // Prüfsummen bereits genutzter Codes
       horses: [],
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
@@ -78,6 +80,8 @@ const Game = (function () {
     if (!state.showResults) state.showResults = [];
     if (!state.friendCode) state.friendCode = Friend.playerCode();
     if (!Array.isArray(state.friendStuds)) state.friendStuds = [];
+    if (!Array.isArray(state.pendingOffers)) state.pendingOffers = [];
+    if (!Array.isArray(state.pendingPurchases)) state.pendingPurchases = [];
     if (!Array.isArray(state.redeemedCodes)) state.redeemedCodes = [];
     if (state.feedLevel == null) state.feedLevel = 1;
     if (state.careLevel == null) state.careLevel = 1;
@@ -179,6 +183,7 @@ const Game = (function () {
   function listForSale(horseId, price) {
     const h = getHorse(horseId);
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
     if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute - erst nach der Geburt verkaufen (oder in die Auktion geben).' };
     if (state.saleListings.some((s) => s.horseId === horseId)) return { ok: false, msg: 'Steht bereits zum Verkauf.' };
     state.saleListings.push({ horseId: horseId, price: Math.max(100, Math.round(price)), weeks: 0 });
@@ -197,7 +202,7 @@ const Game = (function () {
   // (null). Wird beim "Woche weiter" der Reihe nach abgearbeitet.
   function setTrainingPlan(horseId, plan) {
     const h = getHorse(horseId);
-    if (!h) return;
+    if (!h || h.offered) return;
     const clean = (Array.isArray(plan) ? plan : []).slice(0, 6)
       .map((d) => (d && DISC.indexOf(d) !== -1 ? d : null));
     h.trainingPlan = clean;
@@ -214,6 +219,7 @@ const Game = (function () {
     // Tagesnachfrage beeinflusst.
     const h = getHorse(horseId);
     if (!h) return { ok: false };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
     const dm = clamp(Economy.demandMultiplier(state, h), 0.85, 1.12);
     const v = Math.round(valuation(h) * 0.5 * dm);
     Economy.applySaleImpact(state, h);
@@ -224,63 +230,165 @@ const Game = (function () {
     return { ok: true, amount: v };
   }
 
-  // --- Freundschaftscode-Tausch (kein Server, kein Login) ---------------
-  function offerHorseToFriend(horseId, price) {
-    const h = getHorse(horseId);
-    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
-    if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute lässt sich nicht per Code weitergeben.' };
-    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: 'Pferd ist in der Auktion.' };
-    price = Math.max(0, Math.round(price || 0));
-    const code = Friend.encodeHorseOffer(h, price, state.friendCode, state.week);
-    state.cash += price;
-    state.stats.horsesSold += 1;
-    state.stats.totalEarnings += price;
-    Economy.applySaleImpact(state, h);
-    unlist(horseId);
-    removeHorse(horseId);
-    log('An Freund weitergegeben: ' + h.name + ' für ' + Economy.fmtEur(price) + '. Code an den Freund schicken.', 'good');
-    save(); emit();
-    return { ok: true, code: code, name: h.name };
+  // --- Freundes-Tausch: Codes weitergeben, kein Server ------------------
+  function markRedeemed(hash) {
+    state.redeemedCodes = state.redeemedCodes || [];
+    state.redeemedCodes.push(hash);
+    if (state.redeemedCodes.length > 80) state.redeemedCodes.shift();
   }
-  function offerStudToFriend(horseId, fee) {
+  function sellBlockReason(h) {
+    if (!h) return 'Pferd nicht gefunden.';
+    if (h.offered) return h.name + ' ist bereits in einem Verkaufsangebot.';
+    if (h.pregnancy) return 'Trächtige Stute lässt sich nicht anbieten.';
+    if (h.forSale) return h.name + ' steht am eigenen Markt zum Verkauf – erst zurückziehen.';
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id)) return h.name + ' ist in der Auktion.';
+    return null;
+  }
+
+  // 1) Verkäufer erstellt ein Angebot. toCode leer -> öffentlich (jeder mit
+  //    dem Code kann bieten; nur EIN Kaufgebot wird angenommen). Das Pferd
+  //    bleibt im Stall, ist aber bis zum Abschluss gesperrt.
+  function createOffer(horseId, price, toCode) {
+    const h = getHorse(horseId);
+    const block = sellBlockReason(h);
+    if (block) return { ok: false, msg: block };
+    toCode = (toCode || '').trim().toUpperCase() || null;
+    if (toCode && !/^HR-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(toCode)) return { ok: false, msg: 'Freundescode-Format: HR-XXXX-XXXX' };
+    if (toCode && toCode === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
+    price = Math.max(0, Math.round(price || 0));
+    const id = Friend.newOfferId();
+    state.pendingOffers = state.pendingOffers || [];
+    state.pendingOffers.push({ id: id, horseId: horseId, price: price, to: toCode, week: state.week });
+    h.offered = true;
+    const code = Friend.encodeOffer(h, price, state.friendCode, toCode, id, state.week);
+    log((toCode ? 'Privates' : 'Öffentliches') + ' Verkaufsangebot: ' + h.name + ' für ' + Economy.fmtEur(price) + '. Code weitergeben.', 'info');
+    save(); emit();
+    return { ok: true, code: code };
+  }
+  function cancelOffer(offerId) {
+    const off = (state.pendingOffers || []).find((o) => o.id === offerId);
+    if (!off) return { ok: false };
+    const h = getHorse(off.horseId);
+    if (h) h.offered = false;
+    state.pendingOffers = state.pendingOffers.filter((o) => o.id !== offerId);
+    log('Verkaufsangebot zurückgezogen' + (h ? ': ' + h.name : '') + '.', 'info');
+    save(); emit();
+    return { ok: true };
+  }
+
+  // Nur prüfen/lesen, nichts ändern – für die Vorschau vor dem Klick.
+  function previewCode(text) {
+    let d;
+    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
+    const mine = state.friendCode;
+    const already = (state.redeemedCodes || []).indexOf(d.hash) !== -1;
+
+    if (d.type === 'OF') {
+      if (d.from === mine) return { ok: false, msg: 'Das ist dein eigenes Angebot.' };
+      if (d.to && d.to !== mine) return { ok: false, msg: 'Dieses private Angebot ist an ' + d.to + ' gerichtet, nicht an dich (' + mine + ').' };
+      if (already) return { ok: false, msg: 'Für dieses Angebot hast du schon geboten.' };
+      return { ok: true, action: 'bid', kind: 'Verkaufsangebot' + (d.public ? ' (öffentlich)' : ' (privat)'),
+        from: d.from, price: d.price, horse: d.horse, warn: state.cash < d.price ? 'Achtung: Du hast aktuell weniger als ' + Economy.fmtEur(d.price) + '.' : null };
+    }
+    if (d.type === 'BD') {
+      if (d.seller && d.seller !== mine) return { ok: false, msg: 'Dieses Kaufgebot gehört zu einem Angebot von ' + d.seller + '.' };
+      const off = (state.pendingOffers || []).find((o) => o.id === d.id);
+      if (!off) return { ok: false, msg: 'Zu diesem Kaufgebot gibt es kein offenes Angebot (schon verkauft oder zurückgezogen).' };
+      const h = getHorse(off.horseId);
+      return { ok: true, action: 'sell', kind: 'Kaufgebot', from: d.from, price: off.price,
+        horse: h ? { name: h.name, breed: h.breed } : null,
+        text: (d.from) + ' möchte ' + (h ? h.name : 'dein Pferd') + ' für ' + Economy.fmtEur(off.price) + ' kaufen.' };
+    }
+    if (d.type === 'DL') {
+      if (already) return { ok: false, msg: 'Diese Lieferung hast du bereits übernommen.' };
+      return { ok: true, action: 'receive', kind: 'Lieferung', from: d.from, price: d.price, horse: d.horse,
+        warn: state.cash < d.price ? 'Nicht genug Geld (' + Economy.fmtEur(d.price) + ').' : (stallFree() < 1 ? 'Kein freier Stallplatz.' : null) };
+    }
+    // SD Deckhengst
+    if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
+    if (already) return { ok: false, msg: 'Diesen Deckhengst hast du schon übernommen.' };
+    return { ok: true, action: 'stud', kind: 'Deckhengst-Angebot', from: d.from, fee: d.fee, horse: d.horse };
+  }
+
+  // 2) Käufer akzeptiert ein Angebot -> erzeugt ein KAUFGEBOT (noch kein Geld).
+  function acceptOffer(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'bid') return { ok: false, msg: p.msg || 'Kein gültiges Angebot.' };
+    const d = Friend.decode(text);
+    markRedeemed(d.hash);
+    state.pendingPurchases = state.pendingPurchases || [];
+    state.pendingPurchases.push({ offerId: d.id, seller: d.from, price: d.price, horseName: d.horse.name, week: state.week });
+    log('Kaufgebot abgegeben für ' + d.horse.name + ' (' + Economy.fmtEur(d.price) + '). Kaufgebot-Code an ' + d.from + ' schicken.', 'info');
+    const code = Friend.encodeBid(d.id, state.friendCode, d.from);
+    save(); emit();
+    return { ok: true, code: code, horseName: d.horse.name };
+  }
+
+  // 3) Verkäufer akzeptiert das ERSTE Kaufgebot -> Pferd raus, Geld rein,
+  //    erzeugt eine LIEFERUNG.
+  function acceptBid(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'sell') return { ok: false, msg: p.msg || 'Kein gültiges Kaufgebot.' };
+    const d = Friend.decode(text);
+    const off = state.pendingOffers.find((o) => o.id === d.id);
+    if (!off) return { ok: false, msg: 'Angebot nicht mehr offen.' };
+    const h = getHorse(off.horseId);
+    if (!h) { cancelOffer(off.id); return { ok: false, msg: 'Pferd nicht mehr im Stall.' }; }
+    if (d.from && d.from === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
+
+    const delivery = Friend.encodeDelivery(h, off.price, off.id, state.friendCode, state.week);
+    state.cash += off.price;
+    state.stats.horsesSold += 1;
+    state.stats.totalEarnings += off.price;
+    Economy.applySaleImpact(state, h);
+    h.offered = false;
+    removeHorse(h.id);
+    state.pendingOffers = state.pendingOffers.filter((o) => o.id !== off.id);
+    log('Verkauft an ' + d.from + ': ' + h.name + ' für ' + Economy.fmtEur(off.price) + '. Lieferungs-Code an den Käufer schicken.', 'good');
+    save(); emit();
+    return { ok: true, code: delivery, horseName: h.name };
+  }
+
+  // 4) Käufer übernimmt die LIEFERUNG -> zahlt, Pferd kommt in den Stall.
+  function acceptDelivery(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'receive') return { ok: false, msg: p.msg || 'Keine gültige Lieferung.' };
+    if (p.warn) return { ok: false, msg: p.warn };
+    const d = Friend.decode(text);
+    const h = Model.hydratePackedHorse(d.horse, state.week, 'von ' + d.from);
+    state.cash -= d.price;
+    state.horses.push(h);
+    markRedeemed(d.hash);
+    state.pendingPurchases = (state.pendingPurchases || []).filter((q) => q.offerId !== d.id);
+    log('Von ' + d.from + ' gekauft: ' + h.name + ' für ' + Economy.fmtEur(d.price) + '.', 'cost');
+    save(); emit();
+    return { ok: true, name: h.name };
+  }
+
+  // Deckhengst öffentlich freigeben (mehrfach nutzbar).
+  function shareStud(horseId, fee) {
     const h = getHorse(horseId);
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
     if (h.sex !== 'hengst') return { ok: false, msg: h.name + ' ist kein Hengst.' };
     if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung.' };
     fee = Math.max(0, Math.round(fee || 0));
-    const code = Friend.encodeStudOffer(h, fee, state.friendCode, state.week);
-    log('Deckhengst freigegeben: ' + h.name + ' (Deckgeld ' + Economy.fmtEur(fee) + '). Code an den Freund schicken.', 'info');
-    save(); emit();
-    return { ok: true, code: code, name: h.name };
+    const code = Friend.encodeStud(h, fee, state.friendCode, state.week);
+    log('Deckhengst öffentlich freigegeben: ' + h.name + ' (Deckgeld ' + Economy.fmtEur(fee) + '). Code teilen.', 'info');
+    return { ok: true, code: code };
   }
-  function redeemFriendCode(text) {
-    let d;
-    try { d = Friend.decode(text); } catch (e) { return { ok: false, msg: e.message }; }
-    if (d.from && d.from === state.friendCode) return { ok: false, msg: 'Das ist dein eigener Code.' };
-    if ((state.redeemedCodes || []).indexOf(d.hash) !== -1) return { ok: false, msg: 'Diesen Code hast du schon eingelöst.' };
-
-    if (d.kind === 'horse') {
-      if (stallFree() < 1) return { ok: false, msg: 'Kein freier Stallplatz.' };
-      if (state.cash < d.price) return { ok: false, msg: 'Nicht genug Geld (' + Economy.fmtEur(d.price) + ').' };
-      const h = Model.hydratePackedHorse(d.horse, state.week, 'von ' + d.from);
-      state.cash -= d.price;
-      state.horses.push(h);
-      state.redeemedCodes.push(d.hash);
-      if (state.redeemedCodes.length > 60) state.redeemedCodes.shift();
-      log('Von Freund ' + d.from + ' gekauft: ' + h.name + ' für ' + Economy.fmtEur(d.price) + '.', 'cost');
-      save(); emit();
-      return { ok: true, kind: 'horse', name: h.name };
-    }
-    // Deckhengst
+  function acceptStud(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'stud') return { ok: false, msg: p.msg || 'Kein gültiger Deckhengst-Code.' };
+    const d = Friend.decode(text);
     const stud = Model.hydratePackedHorse(d.horse, state.week, 'Deckstation (Freund)');
     stud.external = true;
     state.friendStuds.push({ horse: stud, studFee: d.fee, friend: d.from, elite: false });
-    state.redeemedCodes.push(d.hash);
-    if (state.redeemedCodes.length > 60) state.redeemedCodes.shift();
-    log('Deckhengst von Freund ' + d.from + ' verfügbar: ' + stud.name + ' (Deckgeld ' + Economy.fmtEur(d.fee) + ').', 'good');
+    markRedeemed(d.hash);
+    log('Deckhengst von ' + d.from + ' in deiner Deckstation: ' + stud.name + ' (Deckgeld ' + Economy.fmtEur(d.fee) + ').', 'good');
     save(); emit();
-    return { ok: true, kind: 'stud', name: stud.name };
+    return { ok: true, name: stud.name };
   }
+
   function removeFriendStud(horseId) {
     state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
     save(); emit();
@@ -299,6 +407,8 @@ const Game = (function () {
     const sire = sr.horse;
     if (dam.sex !== 'stute') return { error: dam.name + ' ist keine Stute.' };
     if (dam.pregnancy) return { error: dam.name + ' ist bereits trächtig.' };
+    if (dam.offered) return { error: dam.name + ' ist in einem Verkaufsangebot.' };
+    if (sire.offered) return { error: sire.name + ' ist in einem Verkaufsangebot.' };
     const sy = Model.ageYears(sire, state.week), dy = Model.ageYears(dam, state.week);
     if (sy < Model.MATURITY_YEARS) return { error: sire.name + ' ist mit ' + sy.toFixed(1) + ' Jahren zu jung.' };
     if (dy < Model.MATURITY_YEARS) return { error: dam.name + ' ist mit ' + dy.toFixed(1) + ' Jahren zu jung.' };
@@ -369,6 +479,7 @@ const Game = (function () {
   function consignToAuction(horseId, reserve) {
     const h = getHorse(horseId);
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
     if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: 'Bereits in der Auktion.' };
     const est = valuation(h);
     state.auction.lots.push({
@@ -438,8 +549,9 @@ const Game = (function () {
         h.interieur[t] = clamp(h.interieur[t] + 1, 10, 99);
         h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
       }
-      // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten).
-      const plan = (h.trainingPlan || []).filter((d) => d && DISC.indexOf(d) !== -1);
+      // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten). Pferde in
+      // einem Verkaufsangebot trainieren nicht.
+      const plan = h.offered ? [] : (h.trainingPlan || []).filter((d) => d && DISC.indexOf(d) !== -1);
       const restSlots = 6 - plan.length;
       h.energy = clamp(h.energy + restSlots * 5, 0, 100);           // Ruhetage erholen extra
       if (y >= Model.MATURITY_YEARS && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
@@ -721,6 +833,11 @@ const Game = (function () {
     if (sick) t.push({ icon: '🩺', tab: 'stall', kind: 'warn',
       text: sick + ' Pferd' + (sick > 1 ? 'e' : '') + ' mit angeschlagener Gesundheit (< 55)' });
 
+    if ((state.pendingOffers || []).length) t.push({ icon: '👥', tab: 'gestüt', kind: 'info',
+      text: (state.pendingOffers.length) + ' Verkaufsangebot' + (state.pendingOffers.length > 1 ? 'e warten' : ' wartet') + ' auf ein Kaufgebot' });
+    if ((state.pendingPurchases || []).length) t.push({ icon: '👥', tab: 'gestüt', kind: 'info',
+      text: 'Du wartest auf ' + state.pendingPurchases.length + ' Lieferung' + (state.pendingPurchases.length > 1 ? 'en' : '') + ' von Freunden' });
+
     return t;
   }
 
@@ -744,9 +861,14 @@ const Game = (function () {
     unlist: unlist,
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
-    offerHorseToFriend: offerHorseToFriend,
-    offerStudToFriend: offerStudToFriend,
-    redeemFriendCode: redeemFriendCode,
+    createOffer: createOffer,
+    cancelOffer: cancelOffer,
+    previewCode: previewCode,
+    acceptOffer: acceptOffer,
+    acceptBid: acceptBid,
+    acceptDelivery: acceptDelivery,
+    shareStud: shareStud,
+    acceptStud: acceptStud,
     removeFriendStud: removeFriendStud,
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,

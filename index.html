@@ -58,6 +58,16 @@
     </div>
   </div>
 
+  <!-- Tauschcode-Vorschau (erst ansehen, dann entscheiden) -->
+  <div class="overlay" id="trade-overlay" hidden>
+    <div class="box wide stack">
+      <div class="row between"><h2 id="trade-title" style="margin:0">Code-Vorschau</h2>
+        <button class="secondary" id="btn-trade-close">Abbrechen</button></div>
+      <div id="trade-body"></div>
+      <div class="row" id="trade-actions"></div>
+    </div>
+  </div>
+
   <!-- Tauschcode anzeigen -->
   <div class="overlay" id="code-overlay" hidden>
     <div class="box stack">
@@ -167,11 +177,20 @@
 
         <h3>Freunde (Pferde tauschen &amp; Deckhengste teilen)</h3>
         <p>Keine Anmeldung, kein Server, keine Datenerhebung. Jede Installation hat einen zufälligen
-        <b>Freundschaftscode</b> (nur in diesem Browser). Im Stall „An Freund verkaufen" oder „Als Deckhengst
-        freigeben" erzeugt einen <b>Tauschcode</b> – reiner Text, den du selbst per Messenger/Mail an einen
-        Freund schickst (funktioniert geräteübergreifend). Der Freund fügt ihn unter „Gestüt → Freunde → Einlösen"
-        ein: beim Pferdekauf zahlt er den Preis, ein Deckhengst landet dauerhaft in seiner Deckstation. Jeder
-        Code lässt sich nur einmal einlösen.</p>
+        <b>Freundschaftscode</b> (nur in diesem Browser). Alle Codes sind reiner Text, den du selbst
+        weitergibst – geräteübergreifend. Beim „Öffnen" eines Codes siehst du <b>zuerst das Pferd mit
+        allen Werten</b>, kaufen/übernehmen bestätigst du dann selbst.</p>
+        <ul>
+          <li><b>Privater Verkauf</b> – im Stall „An Freund verkaufen", Freundescode des Käufers angeben.
+            Nur dieser Freund kann das Angebot öffnen. Einmalig.</li>
+          <li><b>Öffentlicher Verkauf</b> – dasselbe ohne Käufer-Code. Jeder mit dem Code kann ein Kaufgebot
+            abgeben; du nimmst <b>eines</b> an (wer zuerst bietet). Danach ist das Angebot zu.</li>
+          <li><b>Deckhengst</b> – „Deckhengst freigeben": öffentlicher Code, <b>mehrfach nutzbar</b>. Jeder
+            Freund übernimmt den Hengst dauerhaft in seine Deckstation, dein Hengst bleibt bei dir.</li>
+        </ul>
+        <p>Ablauf Verkauf (4 Schritte): <b>Verkäufer</b> erstellt Angebot (Pferd wird gesperrt) → <b>Käufer</b>
+        öffnet, gibt <i>Kaufgebot</i>-Code zurück → <b>Verkäufer</b> öffnet, bestätigt „Verkaufen" (Pferd raus,
+        Geld rein), schickt <i>Lieferungs</i>-Code → <b>Käufer</b> öffnet, „Übernehmen &amp; zahlen".</p>
 
         <h3>Prestige &amp; Rang</h3>
         <p>Steigt durch Turnierplatzierungen (Sieg &gt; Podium &gt; Top 5). Höherer Rang → bessere

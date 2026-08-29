@@ -59,11 +59,17 @@ auf dem Startbildschirm alle Regeln.
   Sonderfarben); viel verkaufen drückt die Preise im eigenen Segment.
 
 - **👥 Freunde** (Tab Gestüt) – ohne Anmeldung, ohne Server, ohne Datenerhebung.
-  Jede Installation hat einen zufälligen **Freundschaftscode** (nur lokal im
-  Browser). „An Freund verkaufen" bzw. „Als Deckhengst freigeben" (im Stall)
-  erzeugt einen **Tauschcode** – reiner Text, den du selbst per Messenger/Mail
-  weitergibst; **geräteübergreifend**. Der Empfänger löst ihn unter „Gestüt →
-  Freunde" ein (jeder Code nur einmal). Das Spiel macht **keine Netzwerk­anfragen**.
+  Zufälliger **Freundschaftscode** (nur lokal im Browser). Alle Tauschcodes sind
+  reiner Text, den du selbst weitergibst; **geräteübergreifend**. Beim „Öffnen"
+  eines Codes wird **erst das Pferd mit allen Werten angezeigt**, dann bestätigst
+  du Kauf/Übernahme selbst. Drei Arten:
+  - **Privater Verkauf** – an einen bestimmten Freundescode gebunden, einmalig.
+  - **Öffentlicher Verkauf** – jeder mit dem Code kann bieten; du nimmst *ein*
+    Kaufgebot an (wer zuerst bietet). 4-Schritt-Ablauf mit Angebot → Kaufgebot →
+    Verkaufen/Lieferung → Übernehmen; Geld fließt erst am Ende.
+  - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
+    dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir.
+  Das Spiel macht **keine Netzwerkanfragen**.
 
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
 noch offen ist. Mit **„Woche weiter"** vergeht Zeit: Nachfrage driftet, Pferde

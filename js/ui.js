@@ -176,19 +176,20 @@ const UI = (function () {
 
       <div class="card" style="margin-top:1rem">
         <h3>👥 Freunde (Pferde tauschen &amp; Deckhengste teilen)</h3>
-        <p class="small muted">Keine Anmeldung, kein Server, keine Datenerhebung (DSGVO-konform). Dein Freundschaftscode ist eine
-        zufällige Kennung nur in diesem Browser. Tauschcodes sind reiner Text, den du selbst per Messenger/Mail an Freunde
-        gibst — funktioniert geräteübergreifend.</p>
-        <div class="row between">
-          <span>Dein Freundschaftscode</span>
+        <p class="small muted">Keine Anmeldung, kein Server, keine Datenerhebung (DSGVO). Dein Freundschaftscode ist eine
+        zufällige Kennung nur in diesem Browser. Alle Tauschcodes sind reiner Text, den du selbst weitergibst — geräteübergreifend.</p>
+        <div class="row">
+          <span>Dein Freundschaftscode:</span>
           <b class="geno-tokens" style="padding:.2rem .5rem">${esc(s.friendCode || '—')}</b>
           <button class="small secondary" data-action="copy-friendcode">kopieren</button>
         </div>
         <div class="row" style="margin-top:.5rem;align-items:flex-start">
-          <textarea id="redeem-input" rows="2" style="flex:1;min-width:220px;font-family:ui-monospace,Consolas,monospace;font-size:.78rem" placeholder="Tauschcode eines Freundes hier einfügen…"></textarea>
-          <button class="small" data-action="redeem-code">Einlösen</button>
+          <textarea id="redeem-input" rows="2" style="flex:1;min-width:220px;font-family:ui-monospace,Consolas,monospace;font-size:.78rem" placeholder="Code eines Freundes einfügen (Angebot, Kaufgebot, Lieferung oder Deckhengst)…"></textarea>
+          <button class="small" data-action="open-code">Öffnen</button>
         </div>
-        <p class="small muted">Im Tab „Stall" kannst du ein Pferd „An Freund verkaufen" oder einen Hengst „Als Deckhengst freigeben" — beides erzeugt einen Code.</p>
+        <p class="small muted">Beim Öffnen siehst du zuerst das Pferd und seine Werte — kaufen bzw. übernehmen musst du dann selbst bestätigen.
+        Im Tab „Stall" bietest du eigene Pferde an (privat = nur ein bestimmter Freundescode, öffentlich = wer zuerst bietet) oder gibst einen Deckhengst frei.</p>
+        ${friendPending(s)}
       </div>
 
       <div class="grid cols-2" style="margin-top:1rem">
@@ -229,6 +230,23 @@ const UI = (function () {
     </div>`;
   }
 
+  function friendPending(s) {
+    const offers = (s.pendingOffers || []).map((o) => {
+      const h = Game.getHorse(o.horseId);
+      return '<div class="row between"><span>🏷️ ' + esc(h ? h.name : '?') + ' — ' + fmt(o.price) +
+        (o.to ? ' · privat an ' + esc(o.to) : ' · öffentlich') + '</span><span>' +
+        '<button class="small secondary" data-action="show-offer-code" data-id="' + o.id + '">Code</button> ' +
+        '<button class="small secondary" data-action="cancel-offer" data-id="' + o.id + '">zurückziehen</button></span></div>';
+    }).join('');
+    const purch = (s.pendingPurchases || []).map((q) =>
+      '<div>⏳ Kaufgebot für „' + esc(q.horseName) + '" (' + fmt(q.price) + ') an ' + esc(q.seller) + ' — wartet auf Lieferung</div>'
+    ).join('');
+    if (!offers && !purch) return '';
+    return '<div class="trade-list" style="margin-top:.6rem">' +
+      (offers ? '<div class="small muted">Deine offenen Verkaufsangebote:</div>' + offers : '') +
+      (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') + '</div>';
+  }
+
   function herdMiniTable() {
     const s = Game.state;
     if (!s.horses.length) return '<p class="muted">Keine Pferde.</p>';
@@ -257,7 +275,7 @@ const UI = (function () {
     const rows = s.horses.slice().sort(sortHorses).map((h) => {
       const best = Model.bestDiscipline(h);
       const preg = h.pregnancy ? ' 🤰' + h.pregnancy.weeksLeft + 'W' : '';
-      const sale = h.forSale ? ' 🏷️' : '';
+      const sale = h.forSale ? ' 🏷️' : (h.offered ? ' 🔒' : '');
       return '<tr class="clickable ' + (h.id === selectedId ? 'selected' : '') + '" data-action="select-horse" data-id="' + h.id + '">' +
         '<td><b>' + esc(h.name) + '</b>' + preg + sale + '<br><span class="muted small">' + esc(h.breed) + '</span></td>' +
         '<td class="small">' + sexIcon(h) + '<br>' + ageStr(h) + '</td>' +
@@ -356,6 +374,10 @@ const UI = (function () {
         ${showRec}
 
         <hr style="border:none;border-top:1px solid var(--border)">
+        ${h.offered ? `
+          <p class="tag warn">🔒 In einem Freundes-Verkaufsangebot — gesperrt für Training, Zucht, Turniere und anderen Verkauf.</p>
+          ${offerCancelBtn(h)}
+        ` : `
         <div class="row">
           ${h.forSale
             ? '<button class="small secondary" data-action="unlist" data-id="' + h.id + '">Verkauf zurückziehen (' + fmt(h.forSale.price) + ')</button>'
@@ -366,10 +388,18 @@ const UI = (function () {
         </div>
         <div class="row">
           <button class="small secondary" data-action="offer-horse" data-id="${h.id}">👥 An Freund verkaufen (Code)</button>
-          ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="offer-stud" data-id="' + h.id + '">👥 Als Deckhengst freigeben (Code)</button>' : ''}
+          ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="share-stud" data-id="' + h.id + '">👥 Deckhengst freigeben (Code)</button>' : ''}
         </div>
+        `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
+  }
+
+  function offerCancelBtn(h) {
+    const o = (Game.state.pendingOffers || []).find((x) => x.horseId === h.id);
+    if (!o) return '';
+    return '<div class="row"><button class="small secondary" data-action="show-offer-code" data-id="' + o.id + '">Angebots-Code anzeigen</button>' +
+      '<button class="small danger" data-action="cancel-offer" data-id="' + o.id + '">Angebot zurückziehen</button></div>';
   }
 
   // Kompakte Nachfrage-Anzeige für ein Pferd, z.B. "Hannoveraner +18 %, Springen +6 %".
@@ -427,8 +457,8 @@ const UI = (function () {
 
   views.zucht = function () {
     const s = Game.state;
-    const stallions = s.horses.filter((h) => h.sex === 'hengst' && ageYears(h) >= Model.MATURITY_YEARS);
-    const mares = s.horses.filter((h) => h.sex === 'stute' && ageYears(h) >= Model.MATURITY_YEARS && !h.pregnancy);
+    const stallions = s.horses.filter((h) => h.sex === 'hengst' && !h.offered && ageYears(h) >= Model.MATURITY_YEARS);
+    const mares = s.horses.filter((h) => h.sex === 'stute' && !h.offered && ageYears(h) >= Model.MATURITY_YEARS && !h.pregnancy);
     const roster = s.studRoster || [];
 
     if (breedSire && !sireExists(breedSire)) breedSire = null;
@@ -619,7 +649,7 @@ const UI = (function () {
   // --- 🏆 Schauen -----------------------------------------------------
   views.schauen = function () {
     const s = Game.state;
-    const adults = s.horses.filter((h) => ageYears(h) >= Model.MATURITY_YEARS);
+    const adults = s.horses.filter((h) => !h.offered && ageYears(h) >= Model.MATURITY_YEARS);
 
     const cards = s.shows.map((show) => {
       const entered = show.entered.map((id) => Game.getHorse(id)).filter(Boolean);
@@ -719,7 +749,7 @@ const UI = (function () {
       </div>`;
     }).join('');
 
-    const consignable = s.horses.filter((h) => !h.pregnancy && !s.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id));
+    const consignable = s.horses.filter((h) => !h.pregnancy && !h.offered && !s.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id));
     const consignSel = '<select id="consign-sel">' + ['<option value="">Pferd wählen…</option>']
       .concat(consignable.map((h) => '<option value="' + h.id + '">' + esc(h.name) + ' (Schätzwert ' + fmt(Game.valuation(h)) + ')</option>')).join('') + '</select>';
 
@@ -809,6 +839,9 @@ const UI = (function () {
     $('#howto-overlay').addEventListener('click', (e) => { if (e.target.id === 'howto-overlay') $('#howto-overlay').hidden = true; });
     $('#btn-code-close').addEventListener('click', () => { $('#code-overlay').hidden = true; });
     $('#code-overlay').addEventListener('click', (e) => { if (e.target.id === 'code-overlay') $('#code-overlay').hidden = true; });
+    $('#btn-trade-close').addEventListener('click', () => { $('#trade-overlay').hidden = true; });
+    $('#trade-overlay').addEventListener('click', (e) => { if (e.target.id === 'trade-overlay') $('#trade-overlay').hidden = true; });
+    $('#trade-actions').addEventListener('click', onTradeAction);
     $('#btn-code-copy').addEventListener('click', () => {
       const t = $('#code-text'); t.select();
       try { navigator.clipboard.writeText(t.value); toast('Kopiert.'); }
@@ -868,37 +901,45 @@ const UI = (function () {
       catch (e) { toast(Game.state.friendCode, false); }
       return;
     }
-    if (a === 'redeem-code') {
+    if (a === 'open-code') {
       const inp = $('#redeem-input');
-      const r = Game.redeemFriendCode(inp ? inp.value : '');
-      if (!r.ok) { toast(r.msg, true); return; }
-      toast(r.kind === 'stud' ? 'Deckhengst „' + r.name + '" ist jetzt in deiner Deckstation.' : '„' + r.name + '" ist in deinem Stall.');
-      render();
+      const raw = inp ? inp.value.trim() : '';
+      if (!raw) { toast('Erst einen Code einfügen.', true); return; }
+      UI.showTradePreview(raw);
       return;
     }
     if (a === 'offer-horse') {
       const h = Game.getHorse(el.dataset.id);
-      const def = Game.marketPrice(h);
-      const p = prompt('„' + h.name + '" an einen Freund verkaufen.\nPreis, den dein Freund zahlt (du bekommst ihn sofort gutgeschrieben, das Pferd verlässt deinen Stall):', def);
-      if (p == null) return;
-      if (!confirm('„' + h.name + '" wird jetzt aus deinem Stall entfernt und du erhältst ' + fmt(parseInt(p, 10) || 0) + '. Fortfahren?')) return;
-      const r = Game.offerHorseToFriend(h.id, parseInt(p, 10));
-      if (!r.ok) { toast(r.msg, true); return; }
-      selectedId = null;
-      UI.showCode('Pferde-Tauschcode: ' + r.name,
-        'Schick diesen Code an deinen Freund. Er fügt ihn unter „Gestüt → Freunde → Einlösen" ein und zahlt den Preis.', r.code);
+      const to = prompt('An wen? Freundescode für einen PRIVATEN Verkauf (Format HR-XXXX-XXXX).\nLeer lassen = ÖFFENTLICH (jeder mit dem Code kann bieten, wer zuerst bietet, bekommt es).', '');
+      if (to == null) return;
+      const price = prompt('Verkaufspreis für „' + h.name + '" (Marktwert ' + fmt(Game.marketPrice(h)) + '):', Game.marketPrice(h));
+      if (price == null) return;
+      const r = Game.createOffer(h.id, parseInt(price, 10), to);
+      if (!r.ok) { toast(r.msg, true); render(); return; }
+      UI.showCode('Verkaufs-Angebotscode: ' + h.name,
+        'Schick diesen Code an deinen Freund. Er öffnet ihn, sieht das Pferd, gibt ein Kaufgebot ab und schickt dir dessen Code zurück.', r.code);
       render();
       return;
     }
-    if (a === 'offer-stud') {
+    if (a === 'share-stud') {
       const h = Game.getHorse(el.dataset.id);
       const def = 800 + Math.round(Game.valuation(h) * 0.03);
-      const p = prompt('„' + h.name + '" als Deckhengst für einen Freund freigeben.\nDeckgeld, das dein Freund je Bedeckung zahlt (dein Hengst bleibt bei dir):', def);
-      if (p == null) return;
-      const r = Game.offerStudToFriend(h.id, parseInt(p, 10));
+      const fee = prompt('Deckhengst „' + h.name + '" öffentlich freigeben.\nDeckgeld je Bedeckung, das Freunde zahlen (dein Hengst bleibt bei dir, Code ist mehrfach nutzbar):', def);
+      if (fee == null) return;
+      const r = Game.shareStud(h.id, parseInt(fee, 10));
       if (!r.ok) { toast(r.msg, true); return; }
-      UI.showCode('Deckhengst-Code: ' + r.name,
-        'Schick diesen Code an deinen Freund. Der Hengst erscheint dann dauerhaft in seiner Deckstation.', r.code);
+      UI.showCode('Deckhengst-Code: ' + h.name,
+        'Diesen Code kannst du an beliebig viele Freunde geben. Jeder öffnet ihn und übernimmt den Hengst dauerhaft in seine Deckstation.', r.code);
+      return;
+    }
+    if (a === 'cancel-offer') { const r = Game.cancelOffer(el.dataset.id); if (r.ok) toast('Angebot zurückgezogen.'); render(); return; }
+    if (a === 'show-offer-code') {
+      const o = (Game.state.pendingOffers || []).find((x) => x.id === el.dataset.id);
+      if (!o) return;
+      const h = Game.getHorse(o.horseId);
+      if (h) UI.showCode('Verkaufs-Angebotscode: ' + h.name,
+        'An den Freund schicken. Kaufgebot-Code kommt zurück.',
+        Friend.encodeOffer(h, o.price, Game.state.friendCode, o.to, o.id, Game.state.week));
       return;
     }
     if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
@@ -1020,5 +1061,71 @@ const UI = (function () {
     setTimeout(() => { $('#code-text').focus(); $('#code-text').select(); }, 30);
   }
 
-  return { init: init, showTab: showTab, toast: toast, showCode: showCode };
+  // Rendert einen Steckbrief aus einem "packHorse"-Objekt (Friend-Codes).
+  function packedHorseCard(hp) {
+    if (!hp || !hp.genotype) return '';
+    const y = (hp.ageWeeks || 156) / Model.WEEKS_PER_YEAR;
+    const ph = Genetics.describe(hp.genotype, y);
+    const begs = Model.DISC.map((d) => d.slice(0, 2) + ' ' + Math.round((hp.potential && hp.potential[d]) || 0)).join(' · ');
+    return `<div class="card" style="background:var(--surface-2)">
+      <div class="row between"><b>${esc(hp.name || '?')}</b><span class="tag${hp.isMix ? ' warn' : ''}">${esc(hp.breed || '')}</span></div>
+      <div class="small muted">${hp.sex === 'hengst' ? '♂ Hengst' : hp.sex === 'stute' ? '♀ Stute' : '⚬ Wallach'} · ${y.toFixed(1)} J. · ${esc(ph.display)}</div>
+      <div class="geno-tokens">${esc(ph.tokens)}</div>
+      <div class="small">Exterieur ${Math.round(hp.conformation || 0)} · Interieur ${Math.round(hp.temperament || 0)} · Gesundheit ${Math.round(hp.health || 0)}</div>
+      <div class="small muted">Begabungen (Potenzial): ${begs}</div>
+      ${hp.wins ? '<div class="small">' + hp.wins + ' Turniersiege</div>' : ''}
+    </div>`;
+  }
+
+  // Code-Vorschau: erst zeigen, was drinsteckt, dann Aktionsknopf.
+  function showTradePreview(raw) {
+    const p = Game.previewCode(raw);
+    if (!p.ok) { toast(p.msg, true); return; }
+    tradeRaw = raw;
+    $('#trade-title').textContent = p.kind + ' von ' + p.from;
+    let body = '';
+    if (p.horse && p.horse.genotype) body += packedHorseCard(p.horse);
+    if (p.text) body += '<p>' + esc(p.text) + '</p>';
+    if (p.action === 'bid') body += '<div class="row between"><span>Preis</span><b>' + fmt(p.price) + '</b></div>';
+    if (p.action === 'stud') body += '<div class="row between"><span>Deckgeld je Bedeckung</span><b>' + fmt(p.fee) + '</b></div>';
+    if (p.warn) body += '<p class="tag warn small">' + esc(p.warn) + '</p>';
+    $('#trade-body').innerHTML = body;
+
+    const btn = {
+      bid: 'Kaufgebot abgeben (' + fmt(p.price) + ')',
+      sell: 'An ' + p.from + ' verkaufen (' + fmt(p.price) + ')',
+      receive: 'Übernehmen & ' + fmt(p.price) + ' zahlen',
+      stud: 'Deckhengst übernehmen',
+    }[p.action];
+    $('#trade-actions').innerHTML =
+      '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
+      '<button class="secondary" data-trade="cancel">Abbrechen</button>';
+    $('#trade-overlay').hidden = false;
+  }
+  let tradeRaw = null;
+  function onTradeAction(e) {
+    const b = e.target.closest('[data-trade]');
+    if (!b) return;
+    const act = b.dataset.trade;
+    if (act === 'cancel') { $('#trade-overlay').hidden = true; return; }
+    $('#trade-overlay').hidden = true;
+    let r;
+    if (act === 'bid') r = Game.acceptOffer(tradeRaw);
+    else if (act === 'sell') r = Game.acceptBid(tradeRaw);
+    else if (act === 'receive') r = Game.acceptDelivery(tradeRaw);
+    else if (act === 'stud') r = Game.acceptStud(tradeRaw);
+    if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
+    if (r.code) {
+      const hints = {
+        bid: 'Schick dieses Kaufgebot zurück an den Verkäufer. Bei Zuschlag bekommst du eine Lieferung.',
+        sell: 'Schick diese Lieferung an den Käufer – er übernimmt damit das Pferd und zahlt.',
+      };
+      showCode(act === 'bid' ? 'Kaufgebot-Code' : 'Lieferungs-Code', hints[act], r.code);
+    } else {
+      toast(r.name ? '„' + r.name + '" übernommen.' : 'Erledigt.');
+    }
+    render();
+  }
+
+  return { init: init, showTab: showTab, toast: toast, showCode: showCode, showTradePreview: showTradePreview };
 })();

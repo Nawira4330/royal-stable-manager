@@ -178,6 +178,9 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 .stud-filter input { width: 5rem; }
 .stud-filter select { max-width: 12rem; }
 
+.trade-list div { padding: .3rem 0; border-bottom: 1px dashed var(--border); font-size: .88rem; }
+.trade-list div:last-child { border-bottom: none; }
+
 /* To-do-Liste (Gestüt) */
 .todo-item { padding: .35rem .5rem; border-radius: 6px; background: var(--surface-2); margin: .3rem 0; cursor: pointer; font-size: .9rem; border-left: 3px solid var(--accent); }
 .todo-item:hover { background: rgba(var(--accent-rgb), .12); }

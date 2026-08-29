@@ -1,11 +1,22 @@
 /* ============================================================================
-   Freundschaftscodes & Tauschcodes.
+   Freundschaftscode & Tauschcodes  (kein Login, kein Server, keine
+   Datenerhebung – DSGVO-konform; das Spiel macht keine Netzwerkanfragen).
 
-   Kein Login, kein Server, keine Datenabfrage: Jede Installation bekommt
-   einmalig einen zufälligen Freundschaftscode (im localStorage, überlebt
-   „Neues Spiel" und „Spielstand löschen"). Pferde-Verkäufe und Deckhengst-
-   Angebote werden als kopierbarer Text-Code exportiert, den man per
-   Messenger/Mail an Freunde schickt; die Gegenseite löst ihn ein.
+   Codearten
+   ---------
+   OF  Verkaufs-ANGEBOT   (privat: an einen bestimmten Freundescode gebunden,
+                            oder öffentlich). Enthält Pferdedaten + Preis +
+                            Angebots-ID. Einmal-Verkauf: nur EIN Kaufgebot
+                            wird vom Verkäufer angenommen ("der Schnellste").
+   BD  KAUFGEBOT           Antwort des Käufers auf ein Angebot (Angebots-ID +
+                            Käufer-Code). Noch kein Geld, noch kein Pferd.
+   DL  LIEFERUNG           Antwort des Verkäufers: enthält die Pferdedaten.
+                            Erst hier zahlt der Käufer und bekommt das Pferd.
+   SD  DECKHENGST          Öffentlich & mehrfach nutzbar: jeder Freund kann
+                            den Hengst dauerhaft in seine Deckstation legen.
+
+   Jeder Code ist Text (UTF-8 -> Base64url mit kurzer Prüfsumme) und wird
+   vom Spieler selbst weitergegeben – geräteübergreifend.
    Globales `Friend`.
    ========================================================================== */
 const Friend = (function () {
@@ -19,8 +30,6 @@ const Friend = (function () {
     for (let i = 0; i < n; i++) s += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
     return s;
   }
-
-  // Liefert den (bei Bedarf neu erzeugten) Freundschaftscode dieser Installation.
   function playerCode() {
     let c = null;
     try { c = localStorage.getItem(CODE_KEY); } catch (e) {}
@@ -30,26 +39,27 @@ const Friend = (function () {
     }
     return c;
   }
+  function newOfferId() { return randChunk(4) + '-' + randChunk(4); }
 
-  // --- kompakte, kopierbare Kodierung (UTF-8 -> Base64url) ---------------
+  // --- Kodierung --------------------------------------------------------
   function enc(obj) {
-    const json = JSON.stringify(obj);
-    const b64 = btoa(unescape(encodeURIComponent(json)));
+    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
     return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
   function dec(str) {
-    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    const json = decodeURIComponent(escape(atob(b64)));
-    return JSON.parse(json);
+    return JSON.parse(decodeURIComponent(escape(atob(str.replace(/-/g, '+').replace(/_/g, '/')))));
   }
-  // sehr einfache Prüfsumme, damit „Code kaputt" erkennbar ist
   function sig(s) {
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
     return h.toString(36).slice(0, 6);
   }
+  function pack(type, payload) {
+    const body = enc(payload);
+    return 'HRV2.' + type + '.' + sig(body) + '.' + body;
+  }
 
-  // Reduziert ein Pferd auf das, was die Gegenseite braucht.
+  // Reduziert ein Pferd auf das Nötige.
   function packHorse(h, currentWeek) {
     return {
       name: h.name, sex: h.sex, breed: h.breed, isMix: !!h.isMix,
@@ -65,41 +75,52 @@ const Friend = (function () {
     };
   }
 
-  function encodeHorseOffer(h, price, fromCode, currentWeek) {
-    const payload = { v: 1, k: 'H', from: fromCode, price: Math.max(0, Math.round(price)), horse: packHorse(h, currentWeek) };
-    const body = enc(payload);
-    return 'HRV1.H.' + sig(body) + '.' + body;
+  // --- Encoder --------------------------------------------------------
+  function encodeOffer(h, price, fromCode, toCode, offerId, week) {
+    return pack('OF', {
+      v: 2, id: offerId, from: fromCode, to: toCode || null,
+      public: !toCode, price: Math.max(0, Math.round(price)),
+      horse: packHorse(h, week),
+    });
   }
-  function encodeStudOffer(h, fee, fromCode, currentWeek) {
-    const payload = { v: 1, k: 'S', from: fromCode, fee: Math.max(0, Math.round(fee)), horse: packHorse(h, currentWeek) };
-    const body = enc(payload);
-    return 'HRV1.S.' + sig(body) + '.' + body;
+  function encodeBid(offerId, buyerCode, sellerCode) {
+    return pack('BD', { v: 2, id: offerId, from: buyerCode, seller: sellerCode });
+  }
+  function encodeDelivery(h, price, offerId, sellerCode, week) {
+    return pack('DL', { v: 2, id: offerId, from: sellerCode, price: Math.max(0, Math.round(price)), horse: packHorse(h, week) });
+  }
+  function encodeStud(h, fee, fromCode, week) {
+    return pack('SD', { v: 2, from: fromCode, fee: Math.max(0, Math.round(fee)), horse: packHorse(h, week) });
   }
 
-  // Gibt { kind:'horse'|'stud', from, price|fee, horse } zurück oder wirft.
+  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot' };
+
+  // --- Decoder: prüft Form + Prüfsumme, wirft bei Murks ---------------
   function decode(str) {
     const s = (str || '').trim().replace(/\s+/g, '');
-    const m = s.match(/^HRV1\.([HS])\.([a-z0-9]{1,8})\.(.+)$/i);
+    const m = s.match(/^HRV2\.(OF|BD|DL|SD)\.([a-z0-9]{1,8})\.(.+)$/i);
     if (!m) throw new Error('Das ist kein gültiger Tauschcode.');
-    const body = m[3];
-    if (sig(body) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
+    const type = m[1].toUpperCase();
+    if (sig(m[3]) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
     let p;
-    try { p = dec(body); } catch (e) { throw new Error('Der Code lässt sich nicht lesen.'); }
-    if (!p || !p.horse || !p.horse.genotype) throw new Error('Im Code fehlen Pferdedaten.');
-    return {
-      kind: m[1].toUpperCase() === 'H' ? 'horse' : 'stud',
-      from: p.from || '???',
-      price: p.price || 0,
-      fee: p.fee || 0,
-      horse: p.horse,
-      hash: sig(body),
-    };
+    try { p = dec(m[3]); } catch (e) { throw new Error('Der Code lässt sich nicht lesen.'); }
+    const out = { type: type, typeLabel: TYPE_LABEL[type], hash: sig(m[3]),
+      id: p.id || null, from: p.from || '???', to: p.to || null,
+      seller: p.seller || null, public: !!p.public,
+      price: p.price || 0, fee: p.fee || 0, horse: p.horse || null };
+    if ((type === 'OF' || type === 'DL' || type === 'SD') && (!out.horse || !out.horse.genotype)) {
+      throw new Error('Im Code fehlen Pferdedaten.');
+    }
+    return out;
   }
 
   return {
     playerCode: playerCode,
-    encodeHorseOffer: encodeHorseOffer,
-    encodeStudOffer: encodeStudOffer,
+    newOfferId: newOfferId,
+    encodeOffer: encodeOffer,
+    encodeBid: encodeBid,
+    encodeDelivery: encodeDelivery,
+    encodeStud: encodeStud,
     decode: decode,
   };
 })();
