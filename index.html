@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Gestuetsspiel</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar" hidden>
+    <span class="brand" id="tb-stud">Gestuet</span>
+    <span class="stat">Woche <b id="tb-week">0</b> <span class="muted small" id="tb-year"></span></span>
+    <span class="stat" id="tb-cash-wrap">Kasse <b id="tb-cash">0 €</b></span>
+    <span class="stat">Prestige <b id="tb-prestige">0</b> <span class="stars" id="tb-stars"></span></span>
+    <span class="stat">Stall <b id="tb-stall">0/0</b></span>
+    <span class="spacer"></span>
+    <button id="btn-week">Woche weiter ▶</button>
+    <button class="secondary" id="btn-save">Speichern</button>
+    <button class="secondary" id="btn-menu">Menue</button>
+  </header>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button class="tab-btn active" data-tab="gestuet">🏡 Gestuet</button>
+    <button class="tab-btn" data-tab="stall">🐴 Stall</button>
+    <button class="tab-btn" data-tab="zucht">🧬 Zucht</button>
+    <button class="tab-btn" data-tab="schauen">🏆 Schauen</button>
+    <button class="tab-btn" data-tab="auktion">🔨 Auktion</button>
+    <button class="tab-btn" data-tab="markt">🛒 Markt</button>
+  </nav>
+
+  <main id="view"></main>
+
+  <!-- Startbildschirm -->
+  <div class="overlay" id="start-overlay">
+    <div class="box stack">
+      <h1>🐴 Gestuetsspiel</h1>
+      <p class="muted small">
+        Baue ein Pferdegestuet auf: kaufe und verkaufe Pferde, zuechte mit
+        echter Farbgenetik (Mendel-Vererbung, letale Kombinationen, Inzucht),
+        trainiere fuer sechs Disziplinen und starte bei Zuchtschauen,
+        Turnieren und Auktionen. Alles wird lokal im Browser gespeichert.
+      </p>
+      <label for="new-stud-name">Name deines Gestuets</label>
+      <input type="text" id="new-stud-name" placeholder="z.B. Gestuet Eichenhof" />
+      <div class="row">
+        <button id="btn-new">Neues Spiel</button>
+        <button class="secondary" id="btn-continue" hidden>Weiterspielen</button>
+      </div>
+      <details>
+        <summary class="muted small">Spielstand importieren</summary>
+        <textarea id="import-text" rows="4" style="width:100%;margin-top:.4rem" placeholder="JSON hier einfuegen"></textarea>
+        <button class="secondary small" id="btn-import" style="margin-top:.4rem">Importieren</button>
+      </details>
+    </div>
+  </div>
+
+  <!-- Menue -->
+  <div class="overlay" id="menu-overlay" hidden>
+    <div class="box stack">
+      <h2>Menue</h2>
+      <button class="secondary" id="btn-export">Spielstand als Text exportieren</button>
+      <textarea id="export-text" rows="6" style="width:100%" hidden></textarea>
+      <button class="danger" id="btn-wipe">Spielstand loeschen &amp; neu starten</button>
+      <button class="secondary" id="btn-menu-close">Schliessen</button>
+    </div>
+  </div>
+
+  <script src="js/genetics.js"></script>
+  <script src="js/names.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/economy.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
