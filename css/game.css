@@ -166,6 +166,23 @@ details[open] { padding-bottom: .5rem; }
 details table { margin-top: .4rem; background: var(--surface); }
 details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 
+/* Wochen-Trainingsplan (6 Slots) */
+.plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; margin: .4rem 0; }
+.plan-grid select { padding: .3rem .4rem; font-size: .82rem; }
+
+.table-wrap { overflow-x: auto; }
+
+/* Deckstation-Suchkriterien */
+.stud-filter { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: end; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .7rem; }
+.stud-filter label { display: flex; flex-direction: column; gap: .15rem; margin: 0; color: var(--muted); }
+.stud-filter input { width: 5rem; }
+.stud-filter select { max-width: 12rem; }
+
+/* To-do-Liste (Gestüt) */
+.todo-item { padding: .35rem .5rem; border-radius: 6px; background: var(--surface-2); margin: .3rem 0; cursor: pointer; font-size: .9rem; border-left: 3px solid var(--accent); }
+.todo-item:hover { background: rgba(var(--accent-rgb), .12); }
+.todo-item.warn { border-left-color: var(--danger); }
+
 /* --- Ereignis-Log --- */
 .log { max-height: 340px; overflow-y: auto; font-size: .84rem; }
 .log .entry { padding: .3rem .1rem; border-bottom: 1px dashed var(--border); }

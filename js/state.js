@@ -22,7 +22,7 @@ const Game = (function () {
   // --- Neues Spiel.
   function newGame(studName) {
     state = {
-      version: 3,
+      version: 4,
       studName: studName || Names.randStudName(),
       week: 0,
       cash: 60000,
@@ -30,12 +30,14 @@ const Game = (function () {
       facilities: { stalls: 0, arena: 0, vet: 0, marketing: 0 },
       feedLevel: 1,       // Fütterung: 0 Spar / 1 Standard / 2 Premium
       careLevel: 1,       // Pflege:    0 Minimal / 1 Solide / 2 Intensiv
+      demand: Economy.initDemand(),   // Angebot & Nachfrage je Rasse/Disziplin
       horses: [],
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
       auction: { lots: [], nextWeek: 2 },
       shows: [],
       saleListings: [],   // { horseId, price, weeks }
+      showResults: [],    // letzte Turnier-Ergebnislisten
       eventLog: [],
       nextMarketWeek: 0,
       nextShowWeek: 0,
@@ -65,11 +67,30 @@ const Game = (function () {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); return true; }
     catch (e) { return false; }
   }
+  // Ältere Spielstände auf den aktuellen Aufbau bringen (Detailwerte,
+  // Nachfrage, ...), damit nichts abstürzt.
+  function migrate() {
+    if (!state) return;
+    if (!state.demand) state.demand = Economy.initDemand();
+    if (!state.showResults) state.showResults = [];
+    if (state.feedLevel == null) state.feedLevel = 1;
+    if (state.careLevel == null) state.careLevel = 1;
+    const fix = (h) => { if (h) Model.ensureTraits(h); };
+    (state.horses || []).forEach((h) => {
+      fix(h);
+      if (h.trainingFocus && !h.trainingPlan) h.trainingPlan = [h.trainingFocus, h.trainingFocus, h.trainingFocus];
+      if (h.pregnancy && h.pregnancy.sireSnapshot) fix(h.pregnancy.sireSnapshot);
+    });
+    (state.market || []).forEach((o) => fix(o.horse));
+    (state.studRoster || []).forEach((x) => fix(x.horse));
+    if (state.auction && state.auction.lots) state.auction.lots.forEach((l) => fix(l.horse));
+  }
   function load() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return false;
       state = JSON.parse(raw);
+      migrate();
       emit();
       return true;
     } catch (e) { return false; }
@@ -81,7 +102,7 @@ const Game = (function () {
   function importSave(text) {
     const parsed = JSON.parse(text);
     if (!parsed || !Array.isArray(parsed.horses)) throw new Error('Ungültiger Spielstand.');
-    state = parsed; save(); emit(); return true;
+    state = parsed; migrate(); save(); emit(); return true;
   }
   function wipe() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} state = null; }
 
@@ -100,7 +121,12 @@ const Game = (function () {
     return null;
   }
   function stallFree() { return Economy.stallCapacity(state) - state.horses.length; }
+  // "Fairer" Schätzwert (ohne Tagesnachfrage).
   function valuation(h) { return Model.valuation(h, state.week, Economy.prestigeMult(state)); }
+  // Was der Markt gerade zahlt (Schätzwert × aktuelle Nachfrage im Segment).
+  function marketPrice(h) {
+    return Math.round(valuation(h) * Economy.demandMultiplier(state, h) / 50) * 50;
+  }
 
   function addCash(v, reason) {
     state.cash += v;
@@ -158,18 +184,30 @@ const Game = (function () {
     save(); emit();
   }
 
-  function setTrainingFocus(horseId, disc) {
+  // Wochen-Trainingsplan: bis zu 6 Einheiten (je eine Disziplin) oder Ruhe
+  // (null). Wird beim "Woche weiter" der Reihe nach abgearbeitet.
+  function setTrainingPlan(horseId, plan) {
     const h = getHorse(horseId);
     if (!h) return;
-    h.trainingFocus = (disc && DISC.indexOf(disc) !== -1) ? disc : null;
+    const clean = (Array.isArray(plan) ? plan : []).slice(0, 6)
+      .map((d) => (d && DISC.indexOf(d) !== -1 ? d : null));
+    h.trainingPlan = clean;
+    h.trainingFocus = clean.find((d) => d) || null;   // Kompatibilität
     save(); emit();
+  }
+  // Alt-API (einzelner Fokus) -> füllt den ganzen Plan.
+  function setTrainingFocus(horseId, disc) {
+    setTrainingPlan(horseId, disc ? [disc, disc, disc] : []);
   }
 
   function euthanizeOrSellQuick(horseId) {
-    // "Schnellverkauf" zum halben Schätzwert an einen Händler.
+    // "Schnellverkauf" an einen Händler: halber Schätzwert, leicht von der
+    // Tagesnachfrage beeinflusst.
     const h = getHorse(horseId);
     if (!h) return { ok: false };
-    const v = Math.round(valuation(h) * 0.5);
+    const dm = clamp(Economy.demandMultiplier(state, h), 0.85, 1.12);
+    const v = Math.round(valuation(h) * 0.5 * dm);
+    Economy.applySaleImpact(state, h);
     removeHorse(horseId);
     addCash(v, 'Schnellverkauf ' + h.name + ' an Händler');
     state.stats.horsesSold++;
@@ -284,8 +322,8 @@ const Game = (function () {
     if (!show || !h) return { ok: false, msg: 'Schau oder Pferd nicht gefunden.' };
     if (show.done) return { ok: false, msg: 'Schau ist vorbei.' };
     if (show.entered.indexOf(horseId) !== -1) return { ok: false, msg: 'Schon genannt.' };
-    if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung (< 3 Jahre).' };
-    if (h.pregnancy && show.type === 'sport') return { ok: false, msg: 'Trächtige Stuten starten nicht im Sport.' };
+    const reason = Economy.eligibilityReason(h, show, state.week);
+    if (reason) return { ok: false, msg: reason };
     if (state.cash < show.entryFee) return { ok: false, msg: 'Nenngeld nicht bezahlbar.' };
     state.cash -= show.entryFee;
     show.entered.push(horseId);
@@ -309,6 +347,10 @@ const Game = (function () {
     const care = Economy.careDef(state);
     state.week += 1;
 
+    // 0) Angebot & Nachfrage driften lassen (+ evtl. Markttrend).
+    const trend = Economy.driftDemand(state);
+    if (trend) log('📈 ' + trend, 'info');
+
     // 1) Alterung, Energie, Training, Gesundheit.
     const births = [];
     state.horses.forEach((h) => {
@@ -317,7 +359,7 @@ const Game = (function () {
       h.energy = clamp(h.energy + feed.energyRegen, 0, 100);
       // Leichte Gesundheits-Regeneration durch gutes Futter
       if (feed.healthRegen && h.health < 100 && h.health > 25) {
-        h.health = clamp(h.health + feed.healthRegen, 0, 100);
+        Model.adjustHealth(h, feed.healthRegen);
       }
       // Intensive Pflege hebt langsam eine Interieur-Einzelnote
       if (care.interieurDrift && Math.random() < care.interieurDrift && h.interieur) {
@@ -325,22 +367,32 @@ const Game = (function () {
         h.interieur[t] = clamp(h.interieur[t] + 1, 10, 99);
         h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
       }
-      // Training
-      if (h.trainingFocus && y >= Model.MATURITY_YEARS && h.energy > 22 && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
-        const d = h.trainingFocus;
-        const gap = h.potential[d] - h.skill[d];
-        if (gap > 0.3) {
-          const rate = 0.9 * arena.mult * feed.trainMult
-            * clamp(gap / 40, 0.15, 1)
-            * clamp(h.temperament / 70, 0.5, 1.15)
-            * Model.ageFactor(y)
-            * clamp(h.health / 90, 0.6, 1);
-          h.skill[d] = clamp(h.skill[d] + rate, 0, h.potential[d]);
-          h.energy = clamp(h.energy - 13, 0, 100);
+      // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten).
+      const plan = (h.trainingPlan || []).filter((d) => d && DISC.indexOf(d) !== -1);
+      const restSlots = 6 - plan.length;
+      h.energy = clamp(h.energy + restSlots * 5, 0, 100);           // Ruhetage erholen extra
+      if (y >= Model.MATURITY_YEARS && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
+        let skipped = 0;
+        plan.forEach((d) => {
+          if (h.energy < 25) { skipped++; return; }
+          const gap = h.potential[d] - h.skill[d];
+          if (gap > 0.2) {
+            const rate = 0.46 * arena.mult * feed.trainMult
+              * clamp(gap / 40, 0.15, 1)
+              * clamp(h.interieur ? (Model.interieurOf(h)['Lernwille'] + Model.interieurOf(h)['Rittigkeit']) / 140 : h.temperament / 70, 0.5, 1.2)
+              * Model.ageFactor(y)
+              * clamp(h.health / 90, 0.55, 1)
+              * clamp(h.energy / 60, 0.4, 1.1);
+            h.skill[d] = clamp(h.skill[d] + rate, 0, h.potential[d]);
+          }
+          h.energy = clamp(h.energy - 12, 0, 100);
+        });
+        if (skipped > 0 && plan.length) {
+          log(h.name + ' war zu erschöpft für ' + skipped + ' Trainingseinheit' + (skipped > 1 ? 'en' : '') + ' - mehr Ruhetage einplanen.', 'warn');
         }
       }
       // Altersbedingter Substanzverlust (durch gute Pflege gebremst)
-      if (y > 16) h.health = clamp(h.health - Model.gauss(0.4, 0.3) * care.ageHealthMult, 0, 100);
+      if (y > 16) Model.injureHealth(h, Model.gauss(0.4, 0.3) * care.ageHealthMult, ['Fundament & Sehnen', 'Herz-Kreislauf', 'Hufe']);
       if (y > 26 && Math.random() < 0.06) {
         log(h.name + ' ist im Alter von ' + y.toFixed(0) + ' Jahren friedlich eingeschlafen.', 'warn');
         h._dead = true;
@@ -372,7 +424,7 @@ const Game = (function () {
         return;
       }
       const foal = result.foal;
-      foal.health = clamp(foal.health + vet.foalHealth + feed.foalHealth, 0, 100);
+      Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth);
       foal.name = Names.randName();
       state.stats.foalsBred += 1;
       if (Game.stallFree() >= 1) {
@@ -385,15 +437,15 @@ const Game = (function () {
       }
     });
 
-    // 3) Verkaufslistings abwickeln.
+    // 3) Verkaufslistings abwickeln. Käufer richten sich nach dem, was der
+    //    Markt gerade zahlt (Schätzwert × Nachfrage im Segment).
     const stillListed = [];
     state.saleListings.forEach((s) => {
       const h = getHorse(s.horseId);
       if (!h) return;
       s.weeks += 1;
-      const val = valuation(h);
-      const ratio = s.price / Math.max(1, val);
-      // Verkaufswahrscheinlichkeit sinkt mit überzogenem Preis, steigt mit Zeit/Marketing.
+      const ref = marketPrice(h);
+      const ratio = s.price / Math.max(1, ref);
       let p = clamp(0.55 / Math.pow(ratio, 2.2), 0.02, 0.9) * mkt.saleSpeed;
       p = clamp(p + s.weeks * 0.03, 0, 0.95);
       if (Math.random() < p) {
@@ -401,6 +453,7 @@ const Game = (function () {
         state.cash += paid;
         state.stats.horsesSold += 1;
         state.stats.totalEarnings += paid;
+        Economy.applySaleImpact(state, h);
         log('Verkauft: ' + h.name + ' für ' + Economy.fmtEur(paid) + ' (nach ' + s.weeks + ' Wochen).', 'good');
         removeHorse(s.horseId);
       } else {
@@ -415,15 +468,20 @@ const Game = (function () {
       if (show.done) return;
       if (show.entered.length > 0) {
         const r = Economy.runShow(state, show);
-        state.cash += r.totalPrize;
+        state.cash += r.totalPrize - (r.travelCost || 0);
         state.prestige += r.prestigeGain;
         state.stats.totalEarnings += r.totalPrize;
         const mine = r.results.filter((x) => x.player).sort((a, b) => a.place - b.place);
         const best = mine[0];
         state.stats.showWins += mine.filter((x) => x.place === 1).length;
         log('🏆 ' + show.name + ': bestes eigenes Pferd Platz ' + best.place + '/' + r.results.length +
-          '. Preisgeld ' + Economy.fmtEur(r.totalPrize) + ', +' + r.prestigeGain + ' Prestige.', 'good');
+          ' (' + best.scoreLabel + '). Preisgeld ' + Economy.fmtEur(r.totalPrize) +
+          (r.travelCost ? ', Reise -' + Economy.fmtEur(r.travelCost) : '') + ', +' + r.prestigeGain + ' Prestige.', 'good');
         show._playerResults = mine;
+        show._allResults = r.results;
+        state.showResults = state.showResults || [];
+        state.showResults.unshift({ week: state.week, name: show.name, results: r.results.slice(0, 12) });
+        if (state.showResults.length > 10) state.showResults.pop();
       }
     });
 
@@ -446,6 +504,7 @@ const Game = (function () {
             state.cash += res.amount;
             state.stats.horsesSold += 1;
             state.stats.totalEarnings += res.amount;
+            Economy.applySaleImpact(state, h);
             removeHorse(h.id);
             log('Auktion: ' + h.name + ' für ' + Economy.fmtEur(res.amount) + ' verkauft.', 'good');
           } else {
@@ -503,11 +562,17 @@ const Game = (function () {
       const h = state.horses[Model.randInt(0, state.horses.length - 1)];
       const bill = 300 + Model.randInt(0, 900);
       state.cash -= bill;
-      h.health = clamp(h.health - Model.randInt(3, 12), 0, 100);
-      log('Tierarzt: ' + h.name + ' hatte eine Kolik. Behandlung -' + Economy.fmtEur(bill) + '.', 'cost');
+      const ailments = [
+        { key: ['Atemwege'], name: 'einen Atemwegsinfekt' },
+        { key: ['Immunsystem', 'Herz-Kreislauf'], name: 'eine Kolik' },
+        { key: ['Fundament & Sehnen'], name: 'eine Sehnenreizung' },
+        { key: ['Hufe'], name: 'ein Hufgeschwür' },
+      ][Model.randInt(0, 3)];
+      Model.injureHealth(h, Model.randInt(4, 14), ailments.key);
+      log('Tierarzt: ' + h.name + ' hatte ' + ailments.name + '. Behandlung -' + Economy.fmtEur(bill) + '.', 'cost');
     } else if (roll < 0.55 && horses.length) {
       const h = horses[Model.randInt(0, horses.length - 1)];
-      const offer = Math.round(valuation(h) * (1.1 + Math.random() * 0.4));
+      const offer = Math.round(marketPrice(h) * (1.05 + Math.random() * 0.35));
       state._pendingOffer = { horseId: h.id, price: offer, week: state.week };
       log('💌 Ein Interessent bietet ' + Economy.fmtEur(offer) + ' für ' + h.name + ' (Tab "Stall" -> Angebot annehmen).', 'info');
     } else if (roll < 0.75) {
@@ -516,8 +581,11 @@ const Game = (function () {
       log('Ein Sponsor unterstützt dein Gestüt mit ' + Economy.fmtEur(bonus) + '.', 'good');
     } else if (horses.length) {
       const h = horses[Model.randInt(0, horses.length - 1)];
-      h.temperament = clamp(h.temperament + Model.randInt(2, 6), 10, 99);
-      log(h.name + ' hat sich charakterlich gut entwickelt (+Interieur).', 'good');
+      Model.ensureTraits(h);
+      const t = Model.INTERIEUR_TRAITS[Model.randInt(0, Model.INTERIEUR_TRAITS.length - 1)];
+      h.interieur[t] = clamp(h.interieur[t] + Model.randInt(3, 7), 10, 99);
+      h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
+      log(h.name + ' hat sich charakterlich gut entwickelt (+' + t + ').', 'good');
     }
   }
 
@@ -529,6 +597,7 @@ const Game = (function () {
     state.cash += o.price;
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += o.price;
+    Economy.applySaleImpact(state, h);
     removeHorse(o.horseId);
     log('Angebot angenommen: ' + h.name + ' für ' + Economy.fmtEur(o.price) + ' verkauft.', 'good');
     state._pendingOffer = null;
@@ -536,6 +605,53 @@ const Game = (function () {
     return { ok: true, amount: o.price };
   }
   function declinePendingOffer() { state._pendingOffer = null; save(); emit(); }
+
+  // --- Offene To-dos vor dem Wochenwechsel.
+  function weeklyTodos() {
+    const t = [];
+    const adults = state.horses.filter((h) => Model.ageYears(h, state.week) >= Model.MATURITY_YEARS);
+
+    const noPlan = adults.filter((h) => !(h.trainingPlan || []).some((d) => d));
+    if (noPlan.length) t.push({ icon: '🏋️', tab: 'stall', kind: 'info',
+      text: noPlan.length + ' Pferd' + (noPlan.length > 1 ? 'e' : '') + ' ohne Trainingsplan (' + noPlan.slice(0, 3).map((h) => h.name).join(', ') + (noPlan.length > 3 ? ' …' : '') + ')' });
+
+    const openMares = state.horses.filter((h) => h.sex === 'stute' && !h.pregnancy &&
+      Model.ageYears(h, state.week) >= Model.MATURITY_YEARS && Model.ageYears(h, state.week) <= Model.MAX_BREED_AGE);
+    if (openMares.length) t.push({ icon: '🧬', tab: 'zucht', kind: 'info',
+      text: openMares.length + ' deckbereite Stute' + (openMares.length > 1 ? 'n sind' : ' ist') + ' nicht tragend' });
+
+    let showsOpen = 0;
+    state.shows.forEach((show) => {
+      if (show.done || show.entered.length) return;
+      if (adults.some((h) => !Economy.eligibilityReason(h, show, state.week))) showsOpen++;
+    });
+    if (showsOpen) t.push({ icon: '🏆', tab: 'schauen', kind: 'info',
+      text: showsOpen + ' Turnier' + (showsOpen > 1 ? 'e' : '') + ', bei dem du starten könntest, ohne Nennung' });
+
+    const outbid = (state.auction.lots || []).filter((l) => !l.consignedByPlayer && l.leader === 'ai').length;
+    if (outbid) t.push({ icon: '🔨', tab: 'auktion', kind: 'warn',
+      text: 'Bei ' + outbid + ' Auktionslos' + (outbid > 1 ? 'en' : '') + ' wurdest du überboten' });
+
+    if (state._pendingOffer && getHorse(state._pendingOffer.horseId)) {
+      t.push({ icon: '💌', tab: 'stall', kind: 'info',
+        text: 'Kaufangebot für ' + getHorse(state._pendingOffer.horseId).name + ' (' + Economy.fmtEur(state._pendingOffer.price) + ') offen' });
+    }
+
+    const overpriced = state.saleListings.filter((s) => {
+      const h = getHorse(s.horseId); return h && s.price > marketPrice(h) * 1.25;
+    }).length;
+    if (overpriced) t.push({ icon: '🏷️', tab: 'markt', kind: 'info',
+      text: overpriced + ' Verkaufsangebot' + (overpriced > 1 ? 'e' : '') + ' deutlich über Marktwert (verkauft sich kaum)' });
+
+    if (state.cash < 3000) t.push({ icon: '⚠️', tab: 'gestüt', kind: 'warn',
+      text: 'Kasse niedrig (' + Economy.fmtEur(state.cash) + ') — Wochenunterhalt läuft weiter' });
+
+    const sick = state.horses.filter((h) => h.health < 55).length;
+    if (sick) t.push({ icon: '🩺', tab: 'stall', kind: 'warn',
+      text: sick + ' Pferd' + (sick > 1 ? 'e' : '') + ' mit angeschlagener Gesundheit (< 55)' });
+
+    return t;
+  }
 
   return {
     get state() { return state; },
@@ -546,6 +662,8 @@ const Game = (function () {
     getHorse: getHorse,
     stallFree: stallFree,
     valuation: valuation,
+    marketPrice: marketPrice,
+    weeklyTodos: weeklyTodos,
     setStudName: setStudName,
     setFeed: setFeed,
     setCare: setCare,
@@ -554,6 +672,7 @@ const Game = (function () {
     listForSale: listForSale,
     unlist: unlist,
     setTrainingFocus: setTrainingFocus,
+    setTrainingPlan: setTrainingPlan,
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,
     doBreeding: doBreeding,

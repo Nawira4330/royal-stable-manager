@@ -37,6 +37,7 @@ const Model = (function () {
 
   const EXTERIEUR_TRAITS = ['Kopf & Hals', 'Schulter', 'Rücken', 'Hinterhand', 'Fundament', 'Bewegung'];
   const INTERIEUR_TRAITS = ['Nervenstärke', 'Leistungsbereitschaft', 'Rittigkeit', 'Lernwille', 'Umgänglichkeit'];
+  const GESUNDHEIT_TRAITS = ['Fundament & Sehnen', 'Atemwege', 'Herz-Kreislauf', 'Hufe', 'Immunsystem'];
 
   const INH = {
     begabungRegression: 0.06,
@@ -50,10 +51,11 @@ const Model = (function () {
     interieurRegression: 0.05,    // Zug Richtung 55 (etwas "gutmütiger" Schnitt)
     interieurTraitSpread: 11,
     interieurCoi: 10,
-    gesundheitBase: 96,
+    gesundheitRegression: 0.15,   // Zug Richtung "gesund" (92)
+    gesundheitPull: 92,
+    gesundheitTraitSpread: 6,
     gesundheitCoi: 72,
     gesundheitMix: 3,
-    gesundheitSpread: 4,
   };
 
   let _seq = 1;
@@ -98,6 +100,39 @@ const Model = (function () {
     const o = {}; INTERIEUR_TRAITS.forEach((t) => (o[t] = h.temperament != null ? h.temperament : 60));
     return o;
   }
+  function gesundheitOf(h) {
+    if (h.gesundheit) return h.gesundheit;
+    const o = {}; GESUNDHEIT_TRAITS.forEach((t) => (o[t] = h.health != null ? h.health : 88));
+    return o;
+  }
+
+  // Fehlende Detailwerte für alte Spielstände nachrüsten.
+  function ensureTraits(h) {
+    if (!h.exterieur) { h.exterieur = {}; EXTERIEUR_TRAITS.forEach((t) => (h.exterieur[t] = h.conformation != null ? h.conformation : 62)); }
+    if (!h.interieur) { h.interieur = {}; INTERIEUR_TRAITS.forEach((t) => (h.interieur[t] = h.temperament != null ? h.temperament : 60)); }
+    if (!h.gesundheit) { h.gesundheit = {}; GESUNDHEIT_TRAITS.forEach((t) => (h.gesundheit[t] = h.health != null ? h.health : 88)); }
+    return h;
+  }
+
+  function recalcHealth(h) {
+    if (h.gesundheit) h.health = clamp(round(mean(h.gesundheit, GESUNDHEIT_TRAITS)), 5, 100);
+    return h.health;
+  }
+  // Signierte Anpassung, gleichmäßig auf alle Gesundheits-Einzelnoten.
+  function adjustHealth(h, delta) {
+    if (!h.gesundheit) { h.health = clamp(h.health + delta, 0, 100); return; }
+    const per = delta / GESUNDHEIT_TRAITS.length;
+    GESUNDHEIT_TRAITS.forEach((t) => { h.gesundheit[t] = clamp(h.gesundheit[t] + per, 5, 100); });
+    recalcHealth(h);
+  }
+  // Konzentrierter Schaden auf eine zufällige Einzelnote (Verletzung/Alter).
+  function injureHealth(h, amount, keys) {
+    keys = keys || GESUNDHEIT_TRAITS;
+    if (!h.gesundheit) { h.health = clamp(h.health - amount, 0, 100); return; }
+    const t = keys[randInt(0, keys.length - 1)];
+    h.gesundheit[t] = clamp(h.gesundheit[t] - amount, 5, 100);
+    recalcHealth(h);
+  }
 
   // --- Neues Pferd "aus dem Nichts".
   function generateHorse(opts) {
@@ -128,6 +163,12 @@ const Model = (function () {
     INTERIEUR_TRAITS.forEach((t) => { interieur[t] = clamp(round(tempCenter + gauss(0, 11)), 10, 99); });
     const temperament = clamp(round(mean(interieur, INTERIEUR_TRAITS)), 10, 99);
 
+    // Gesundheit: Einzelnoten um ein Zentrum nahe "gesund".
+    const healthCenter = gauss(90, 6) + (quality - 0.5) * 6;
+    const gesundheit = {};
+    GESUNDHEIT_TRAITS.forEach((t) => { gesundheit[t] = clamp(round(healthCenter + gauss(0, 6)), 25, 100); });
+    const health = clamp(round(mean(gesundheit, GESUNDHEIT_TRAITS)), 25, 100);
+
     const skill = emptySkill();
     if (y >= MATURITY_YEARS && !opts.untrained) {
       const trainedFrac = clamp(gauss(0.45, 0.22), 0, 0.92);
@@ -146,9 +187,10 @@ const Model = (function () {
       skill: skill,
       exterieur: exterieur,
       interieur: interieur,
+      gesundheit: gesundheit,
       conformation: conformation,
       temperament: temperament,
-      health: clamp(round(gauss(88, 8)), 40, 100),
+      health: health,
       energy: 100,
       quality: quality,
       trainingFocus: null,
@@ -182,7 +224,8 @@ const Model = (function () {
       genotype: h.genotype, potential: Object.assign({}, h.potential),
       exterieur: Object.assign({}, exterieurOf(h)),
       interieur: Object.assign({}, interieurOf(h)),
-      conformation: h.conformation, temperament: h.temperament,
+      gesundheit: Object.assign({}, gesundheitOf(h)),
+      conformation: h.conformation, temperament: h.temperament, health: h.health,
       quality: h.quality, ancestors: Object.assign({}, h.ancestors || {}),
     };
   }
@@ -235,6 +278,16 @@ const Model = (function () {
       });
     });
 
+    const sHe = gesundheitOf(sire), dHe = gesundheitOf(dam);
+    const gesundheitTraits = {};
+    GESUNDHEIT_TRAITS.forEach((t) => {
+      gesundheitTraits[t] = traitForecast(sHe[t], dHe[t], {
+        k: INH.gesundheitRegression, pull: INH.gesundheitPull,
+        coi: coi * INH.gesundheitCoi, mix: mix ? -INH.gesundheitMix : 0,
+        spread: INH.gesundheitTraitSpread, lo: 15, hi: 100,
+      });
+    });
+
     const aggr = (traits, keys, spread, lo, hi) => {
       const expect = round(keys.reduce((s, k) => s + traits[k].expect, 0) / keys.length);
       const pmean = round(keys.reduce((s, k) => s + traits[k].parentMean, 0) / keys.length);
@@ -242,16 +295,15 @@ const Model = (function () {
       return { parentMean: pmean, expect: expect, min: clamp(round(expect - band), lo, hi), max: clamp(round(expect + band), lo, hi) };
     };
 
-    const ge = clamp(round(INH.gesundheitBase - coi * INH.gesundheitCoi - (mix ? INH.gesundheitMix : 0)), 20, 100);
-
     return {
       coi: coi, mix: mix, foalBreed: foalBreed,
       begabungen: begabungen,
       exterieurTraits: exterieurTraits,
       interieurTraits: interieurTraits,
+      gesundheitTraits: gesundheitTraits,
       exterieur: aggr(exterieurTraits, EXTERIEUR_TRAITS, INH.exterieurTraitSpread, 10, 100),
       interieur: aggr(interieurTraits, INTERIEUR_TRAITS, INH.interieurTraitSpread, 10, 99),
-      gesundheit: { parentMean: null, expect: ge, min: clamp(ge - 2 * INH.gesundheitSpread, 20, 100), max: 100 },
+      gesundheit: aggr(gesundheitTraits, GESUNDHEIT_TRAITS, INH.gesundheitTraitSpread, 15, 100),
     };
   }
 
@@ -275,11 +327,18 @@ const Model = (function () {
       else { strongCount++; strongDrop += Math.min(0, fe - dv); if (fe >= dv - 2) keepsHigh.push({ group: 'Interieur', trait: t, to: fe }); }
       if (fe < dv - 5) worsens.push({ group: 'Interieur', trait: t, from: dv, to: fe });
     });
+    const dHe = gesundheitOf(dam);
+    GESUNDHEIT_TRAITS.forEach((t) => {
+      const dv = dHe[t], fe = fc.gesundheitTraits[t].expect;
+      if (dv < 75) { weakCount++; weakGain += (fe - dv); if (fe - dv >= 3) improves.push({ group: 'Gesundheit', trait: t, from: dv, to: fe }); }
+      if (fe < dv - 6) worsens.push({ group: 'Gesundheit', trait: t, from: dv, to: fe });
+    });
 
     let score = 50;
-    if (weakCount) score += (weakGain / weakCount) * 2.2;          // Schwächen ausgleichen zählt am meisten
+    if (weakCount) score += (weakGain / weakCount) * 2.0;          // Schwächen ausgleichen zählt am meisten
     if (strongCount) score += (strongDrop / strongCount) * 1.4;    // Stärken nicht verlieren
     score += (fc.exterieur.expect - dam.conformation) * 0.5;
+    score -= (92 - fc.gesundheit.expect) * 0.45;                   // niedrige Fohlengesundheit ist schlecht
     score -= fc.coi * 100 * 0.6;
     score -= fc.mix ? 12 : 0;
     score = clamp(round(score), 0, 100);
@@ -310,7 +369,10 @@ const Model = (function () {
     INTERIEUR_TRAITS.forEach((t) => {
       interieur[t] = clamp(round(fc.interieurTraits[t].expect + gauss(0, INH.interieurTraitSpread)), 8, 99);
     });
-    const health = clamp(round(fc.gesundheit.expect + gauss(0, INH.gesundheitSpread)), 15, 100);
+    const gesundheit = {};
+    GESUNDHEIT_TRAITS.forEach((t) => {
+      gesundheit[t] = clamp(round(fc.gesundheitTraits[t].expect + gauss(0, INH.gesundheitTraitSpread)), 12, 100);
+    });
 
     const foal = {
       id: nextId(),
@@ -324,9 +386,10 @@ const Model = (function () {
       skill: emptySkill(),
       exterieur: exterieur,
       interieur: interieur,
+      gesundheit: gesundheit,
       conformation: clamp(round(mean(exterieur, EXTERIEUR_TRAITS)), 8, 100),
       temperament: clamp(round(mean(interieur, INTERIEUR_TRAITS)), 8, 99),
-      health: health,
+      health: clamp(round(mean(gesundheit, GESUNDHEIT_TRAITS)), 8, 100),
       energy: 100,
       quality: clamp((sire.quality + dam.quality) / 2 + gauss(0, 0.06) - coi * 0.3 - (fc.mix ? 0.08 : 0), 0.02, 0.99),
       trainingFocus: null,
@@ -419,6 +482,7 @@ const Model = (function () {
     DISC: DISC,
     EXTERIEUR_TRAITS: EXTERIEUR_TRAITS,
     INTERIEUR_TRAITS: INTERIEUR_TRAITS,
+    GESUNDHEIT_TRAITS: GESUNDHEIT_TRAITS,
     INH: INH,
     clamp: clamp, gauss: gauss, randInt: randInt,
     nextId: nextId,
@@ -429,6 +493,11 @@ const Model = (function () {
     breedDef: breedDef,
     exterieurOf: exterieurOf,
     interieurOf: interieurOf,
+    gesundheitOf: gesundheitOf,
+    ensureTraits: ensureTraits,
+    recalcHealth: recalcHealth,
+    adjustHealth: adjustHealth,
+    injureHealth: injureHealth,
     generateHorse: generateHorse,
     parentSnapshot: parentSnapshot,
     foalStatForecast: foalStatForecast,

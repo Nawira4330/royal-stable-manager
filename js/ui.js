@@ -12,6 +12,8 @@ const UI = (function () {
   let currentTab = 'gestüt';
   let selectedId = null;      // Stall-Detailansicht
   let breedSire = null, breedDam = null;
+  // Vom Spieler gesetzte Suchkriterien für die Deckstation.
+  let studFilter = { breed: '', exMin: '', disc: '', begMin: '', inMin: '', heMin: '', feeMax: '', sort: 'fee', dir: 1 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
@@ -124,8 +126,17 @@ const UI = (function () {
     });
 
     const offer = s._pendingOffer ? Game.getHorse(s._pendingOffer.horseId) : null;
+    const todos = Game.weeklyTodos();
+    const todoHtml = todos.length
+      ? todos.map((it) => '<div class="todo-item ' + esc(it.kind) + '" data-action="goto-tab" data-tab="' + esc(it.tab) + '">' +
+          it.icon + ' ' + esc(it.text) + ' <span class="muted small">→ ' + esc(it.tab) + '</span></div>').join('')
+      : '<p class="muted small">Alles erledigt — nichts hält dich vom Wochenwechsel ab.</p>';
 
     return `
+      <div class="card" style="margin-bottom:1rem;border-color:${todos.some((t) => t.kind === 'warn') ? 'var(--warn)' : 'var(--border)'}">
+        <h3>📋 To-dos vor „Woche weiter"</h3>
+        ${todoHtml}
+      </div>
       <div class="grid cols-2">
         <div class="card stack">
           <h3>${esc(s.studName)} <button class="small secondary" data-action="rename-stud">umbenennen</button></h3>
@@ -263,14 +274,28 @@ const UI = (function () {
     const pheno = phenoOf(h);
     const adult = y >= Model.MATURITY_YEARS;
 
+    const plan = h.trainingPlan || [];
+    const planCount = {};
+    plan.forEach((d) => { if (d) planCount[d] = (planCount[d] || 0) + 1; });
     const statLines = DISC.map((d) =>
-      '<div class="statline"><span>' + d + (h.trainingFocus === d ? ' 🎯' : '') + '</span>' +
+      '<div class="statline"><span>' + d + (planCount[d] ? ' <span class="tag">' + planCount[d] + '×</span>' : '') + '</span>' +
       bar(h.skill[d], h.potential[d]) + '<span class="right">' + Math.round(h.potential[d]) + '</span></div>'
     ).join('');
 
-    const focusOpts = ['<option value="">— kein Fokus —</option>']
-      .concat(DISC.map((d) => '<option value="' + d + '"' + (h.trainingFocus === d ? ' selected' : '') + '>' + d + '</option>'))
-      .join('');
+    const slotOpts = (sel) => ['<option value="">— Ruhe —</option>']
+      .concat(DISC.map((d) => '<option value="' + d + '"' + (sel === d ? ' selected' : '') + '>' + d + '</option>')).join('');
+    const planEditor = '<div class="plan-grid">' +
+      [0, 1, 2, 3, 4, 5].map((i) =>
+        '<select class="plan-slot" data-action="set-plan" data-id="' + h.id + '" data-slot="' + i + '"' + (adult ? '' : ' disabled') + '>' +
+        slotOpts(plan[i] || '') + '</select>').join('') + '</div>';
+    const restSlots = 6 - plan.filter((d) => d).length;
+    const planHint = plan.some((d) => d)
+      ? '<div class="small muted">' + plan.filter((d) => d).length + ' Einheiten, ' + restSlots + ' Ruhetage. Jede Einheit kostet ~12 Energie, Ruhetage geben +5 zurück. Zu wenig Energie → Einheiten fallen aus.</div>'
+      : '<div class="small muted">Kein Training geplant — das Pferd erholt sich nur.</div>';
+
+    const pts = h.turnierPunkte && Object.keys(h.turnierPunkte).length
+      ? '<div class="small">Saisonpunkte: ' + Object.keys(h.turnierPunkte).map((k) => esc(k) + ' ' + h.turnierPunkte[k]).join(' · ') + '</div>'
+      : '';
 
     const parents = (h.sireName || h.damName)
       ? '<div class="small muted">Abstammung: ' + esc(h.sireName || '?') + ' × ' + esc(h.damName || '?') + '</div>'
@@ -301,15 +326,16 @@ const UI = (function () {
         </div>
         ${subTraitDetails('Exterieur', Model.EXTERIEUR_TRAITS, Model.exterieurOf(h), h.conformation)}
         ${subTraitDetails('Interieur', Model.INTERIEUR_TRAITS, Model.interieurOf(h), h.temperament)}
-        <div class="statline"><span>Gesundheit</span>${plainBar(h.health, h.health < 60 ? 'danger' : '')}<span></span></div>
+        ${subTraitDetails('Gesundheit', Model.GESUNDHEIT_TRAITS, Model.gesundheitOf(h), h.health)}
         <div class="statline"><span>Energie</span>${plainBar(h.energy, 'warn')}<span></span></div>
 
-        <div class="row">
-          <label class="small" style="flex:1">Trainings-Fokus
-            <select data-action="set-focus" data-id="${h.id}" ${adult ? '' : 'disabled'}>${focusOpts}</select>
-          </label>
+        <div>
+          <b class="small">Wochen-Trainingsplan</b> <span class="muted small">(6 Einheiten, wird bei „Woche weiter" abgearbeitet)</span>
+          ${planEditor}
+          ${planHint}
         </div>
         ${adult ? '' : '<p class="small muted">Training, Zucht und Turniere erst ab 3 Jahren.</p>'}
+        ${pts}
         ${showRec}
 
         <hr style="border:none;border-top:1px solid var(--border)">
@@ -321,8 +347,18 @@ const UI = (function () {
             : '<button class="small secondary" data-action="consign" data-id="' + h.id + '">In Auktion einliefern</button>'}
           <button class="small danger" data-action="quick-sell" data-id="${h.id}">Schnellverkauf (½ Wert)</button>
         </div>
-        <div class="small muted">Schätzwert aktuell: <b>${fmt(Game.valuation(h))}</b></div>
+        <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
+  }
+
+  // Kompakte Nachfrage-Anzeige für ein Pferd, z.B. "Hannoveraner +18 %, Springen +6 %".
+  function demandTag(h) {
+    const rows = Economy.demandBreakdown(Game.state, h).filter((r) => Math.abs(r.pct) >= 3);
+    if (!rows.length) return '<span class="muted">neutral</span>';
+    return rows.map((r) => {
+      const cls = r.pct >= 8 ? 'good' : r.pct <= -8 ? 'warn' : '';
+      return '<span class="tag ' + cls + '">' + esc(r.label) + ' ' + (r.pct >= 0 ? '+' : '') + r.pct + ' %</span>';
+    }).join(' ');
   }
 
   // --- 🧬 Zucht --------------------------------------------------------
@@ -357,13 +393,13 @@ const UI = (function () {
     return fcTable(DISC.map((d) => fcRow(d, fc.begabungen[d], dam.potential[d])).join(''));
   }
   function subTable(fc, group, dam) {
-    const keys = group === 'Exterieur' ? Model.EXTERIEUR_TRAITS : Model.INTERIEUR_TRAITS;
-    const traits = group === 'Exterieur' ? fc.exterieurTraits : fc.interieurTraits;
-    const damObj = group === 'Exterieur' ? Model.exterieurOf(dam) : Model.interieurOf(dam);
-    const summary = group === 'Exterieur' ? fc.exterieur : fc.interieur;
-    let rows = keys.map((t) => fcRow(t, traits[t], damObj[t])).join('');
-    rows += fcRow('Ø ' + group, Object.assign({ sire: null, dam: null }, summary),
-      group === 'Exterieur' ? dam.conformation : dam.temperament);
+    const map = {
+      Exterieur: { keys: Model.EXTERIEUR_TRAITS, traits: fc.exterieurTraits, damObj: Model.exterieurOf(dam), summary: fc.exterieur, damAgg: dam.conformation },
+      Interieur: { keys: Model.INTERIEUR_TRAITS, traits: fc.interieurTraits, damObj: Model.interieurOf(dam), summary: fc.interieur, damAgg: dam.temperament },
+      Gesundheit: { keys: Model.GESUNDHEIT_TRAITS, traits: fc.gesundheitTraits, damObj: Model.gesundheitOf(dam), summary: fc.gesundheit, damAgg: dam.health },
+    }[group];
+    let rows = map.keys.map((t) => fcRow(t, map.traits[t], map.damObj[t])).join('');
+    rows += fcRow('Ø ' + group, Object.assign({ sire: null, dam: null }, map.summary), map.damAgg);
     return fcTable(rows);
   }
 
@@ -382,14 +418,13 @@ const UI = (function () {
     ).join('');
 
     const selMare = breedDam ? Game.getHorse(breedDam) : null;
-    const passung = (h) => selMare ? ' · Passung ' + Model.matingMatch(h, selMare).score : '';
     const sireOwn = stallions.map((h) => '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
-      esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + passung(h) + '</option>').join('');
+      esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' + Math.round(h.potential[Model.bestDiscipline(h)]) + '</option>').join('');
     const sireStud = roster.map((x) => {
       const h = x.horse;
       return '<option value="' + h.id + '"' + (breedSire === h.id ? ' selected' : '') + '>' +
         esc(h.name) + ' — ' + esc(h.breed) + ', Ext.' + Math.round(h.conformation) + ', ' + Model.bestDiscipline(h) + ' ' +
-        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')' + passung(h) + '</option>';
+        Math.round(h.potential[Model.bestDiscipline(h)]) + '  (Deckgeld ' + fmt(x.studFee) + ')</option>';
     }).join('');
     const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
       (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
@@ -414,13 +449,12 @@ const UI = (function () {
         const m = plan.match;
         const coiPct = (plan.coi * 100).toFixed(1);
         const coiCls = plan.coi >= 0.125 ? 'warn' : plan.coi >= 0.0625 ? '' : 'good';
-        const scoreCls = m.score >= 66 ? 'good' : m.score >= 45 ? '' : 'warn';
         const traitList = (arr) => arr.map((x) => x.group[0] + ': ' + x.trait + ' ' + x.from + '→' + x.to).join(' · ');
 
         planHtml = `
-          <div class="row between"><span>Passung Hengst ↔ Stute</span><b class="tag ${scoreCls}" style="font-size:1rem">${m.score} / 100</b></div>
-          ${m.improves.length ? '<div class="small"><span class="tag good">gleicht aus</span> ' + esc(traitList(m.improves)) + '</div>' : ''}
-          ${m.worsens.length ? '<div class="small"><span class="tag warn">verschlechtert</span> ' + esc(traitList(m.worsens)) + '</div>' : ''}
+          <div class="small muted">Fohlenwerte im Vergleich zur Stute (du entscheidest, ob der Hengst passt):</div>
+          ${m.improves.length ? '<div class="small"><span class="tag good">Fohlen-Ø höher bei</span> ' + esc(traitList(m.improves)) + '</div>' : ''}
+          ${m.worsens.length ? '<div class="small"><span class="tag warn">niedriger bei</span> ' + esc(traitList(m.worsens)) + '</div>' : ''}
           <div class="row between"><span>Fohlenrasse</span><b>${esc(fc.foalBreed)}</b></div>
           ${fc.mix ? '<p class="small tag warn">„Mix" hat kein Zuchtbuch — Marktwert rund −50 %, Zuchtschau-Malus, Begabungen/Exterieur im Schnitt −5.</p>' : ''}
           <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
@@ -432,7 +466,7 @@ const UI = (function () {
           ${begabungTable(fc, dam)}
           <details style="margin-top:.4rem"><summary class="small"><b>Exterieur im Detail</b> (6 Einzelnoten)</summary>${subTable(fc, 'Exterieur', dam)}</details>
           <details style="margin-top:.3rem"><summary class="small"><b>Interieur im Detail</b> (5 Einzelnoten)</summary>${subTable(fc, 'Interieur', dam)}</details>
-          <div class="row between small" style="margin-top:.3rem"><span>Gesundheit (Erwartung)</span><b>${fc.gesundheit.expect} <span class="muted">(${Math.round(fc.gesundheit.min)}–100)</span></b></div>
+          <details style="margin-top:.3rem"><summary class="small"><b>Gesundheit im Detail</b> (5 Einzelnoten) — Ø Erwartung ${fc.gesundheit.expect}</summary>${subTable(fc, 'Gesundheit', dam)}</details>
 
           <p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
           <ul class="foal-forecast small">
@@ -442,30 +476,69 @@ const UI = (function () {
       }
     }
 
-    // Deckstation-Übersicht. Ist eine Stute gewählt, wird nach Passung sortiert.
-    const rosterRanked = roster.map((x) => ({
-      x: x, m: selMare ? Model.matingMatch(x.horse, selMare) : null,
-    }));
-    if (selMare) rosterRanked.sort((a, b) => b.m.score - a.m.score);
-    const studCards = rosterRanked.map(({ x, m }) => {
-      const h = x.horse;
-      const best = Model.bestDiscipline(h);
-      const passCell = m
-        ? '<td class="small"><b class="tag ' + (m.score >= 66 ? 'good' : m.score >= 45 ? '' : 'warn') + '">' + m.score + '</b>' +
-          (m.improves.length ? '<br><span class="muted">+ ' + esc(m.improves.slice(0, 2).map((i) => i.trait).join(', ')) + '</span>' : '') + '</td>'
-        : '';
-      return `<tr class="clickable" data-action="pick-stud" data-id="${h.id}">
-        <td><b>${esc(h.name)}</b><br><span class="muted small">${esc(h.breed)}${x.elite ? ' · <span class="tag rare">Spitzenvererber</span>' : ''}</span></td>
-        <td class="small">${esc(phenoOf(h).base)}<br>${ageYears(h).toFixed(0)} J.</td>
-        <td class="small">Ext. ${Math.round(h.conformation)}<br>Int. ${Math.round(h.temperament)}</td>
-        <td class="small">${best} ${Math.round(h.potential[best])}</td>
-        ${passCell}
+    // --- Deckstation: SUCHWERKZEUG. Der Spieler setzt die Kriterien, das
+    //     Spiel filtert/sortiert nur nach diesen Vorgaben - es empfiehlt
+    //     keinen Hengst.
+    const f = studFilter;
+    const num = (v) => (v === '' || v == null ? null : parseFloat(v));
+    let list = roster.slice().map((x) => ({ x: x, h: x.horse, best: Model.bestDiscipline(x.horse) }));
+    list = list.filter(({ h, x }) => {
+      if (f.breed && h.breed !== f.breed) return false;
+      if (num(f.exMin) != null && h.conformation < num(f.exMin)) return false;
+      if (num(f.inMin) != null && h.temperament < num(f.inMin)) return false;
+      if (num(f.heMin) != null && h.health < num(f.heMin)) return false;
+      if (num(f.feeMax) != null && x.studFee > num(f.feeMax)) return false;
+      if (f.disc && num(f.begMin) != null && h.potential[f.disc] < num(f.begMin)) return false;
+      return true;
+    });
+    const sortVal = (o) => {
+      switch (f.sort) {
+        case 'fee': return o.x.studFee;
+        case 'ex': return o.h.conformation;
+        case 'in': return o.h.temperament;
+        case 'he': return o.h.health;
+        case 'age': return ageYears(o.h);
+        case 'name': return o.h.name.toLowerCase();
+        default: return DISC.indexOf(f.sort) !== -1 ? o.h.potential[f.sort] : o.x.studFee;
+      }
+    };
+    list.sort((a, b) => {
+      const va = sortVal(a), vb = sortVal(b);
+      if (va < vb) return -1 * f.dir;
+      if (va > vb) return 1 * f.dir;
+      return 0;
+    });
+
+    const opt = (val, cur, label) => '<option value="' + val + '"' + (String(cur) === String(val) ? ' selected' : '') + '>' + label + '</option>';
+    const filterBar = `
+      <div class="stud-filter">
+        <label class="small">Rasse<select data-action="stud-filter" data-field="breed">
+          ${opt('', f.breed, 'alle')}${Names.BREED_KEYS.map((b) => opt(b, f.breed, esc(b))).join('')}
+        </select></label>
+        <label class="small">Exterieur ≥<input type="number" data-action="stud-filter" data-field="exMin" value="${esc(f.exMin)}" min="0" max="100"></label>
+        <label class="small">Interieur ≥<input type="number" data-action="stud-filter" data-field="inMin" value="${esc(f.inMin)}" min="0" max="100"></label>
+        <label class="small">Gesundheit ≥<input type="number" data-action="stud-filter" data-field="heMin" value="${esc(f.heMin)}" min="0" max="100"></label>
+        <label class="small">Begabung<select data-action="stud-filter" data-field="disc">
+          ${opt('', f.disc, '—')}${DISC.map((d) => opt(d, f.disc, d)).join('')}
+        </select> ≥<input type="number" data-action="stud-filter" data-field="begMin" value="${esc(f.begMin)}" min="0" max="100" style="width:4rem"></label>
+        <label class="small">Deckgeld ≤<input type="number" data-action="stud-filter" data-field="feeMax" value="${esc(f.feeMax)}" min="0" step="500"></label>
+        <label class="small">Sortieren<select data-action="stud-filter" data-field="sort">
+          ${opt('fee', f.sort, 'Deckgeld')}${opt('ex', f.sort, 'Exterieur')}${opt('in', f.sort, 'Interieur')}${opt('he', f.sort, 'Gesundheit')}${opt('age', f.sort, 'Alter')}${opt('name', f.sort, 'Name')}${DISC.map((d) => opt(d, f.sort, 'Begabung ' + d)).join('')}
+        </select></label>
+        <button class="small secondary" data-action="stud-filter" data-field="dir" data-toggle="1">${f.dir === 1 ? '↑ aufsteigend' : '↓ absteigend'}</button>
+        <button class="small secondary" data-action="stud-filter-reset">zurücksetzen</button>
+      </div>`;
+
+    const begCell = (h) => DISC.map((d) => '<span class="' + (f.sort === d ? 'tag' : 'muted') + '">' + d.slice(0, 2) + ' ' + Math.round(h.potential[d]) + '</span>').join(' ');
+    const studRows = list.map(({ x, h }) => `
+      <tr class="clickable ${breedSire === h.id ? 'selected' : ''}" data-action="pick-stud" data-id="${h.id}">
+        <td><b>${esc(h.name)}</b>${x.elite ? ' <span class="tag rare">Elite</span>' : ''}<br><span class="muted small">${esc(h.breed)} · ${esc(phenoOf(h).base)} · ${ageYears(h).toFixed(0)} J.</span></td>
+        <td class="right">${Math.round(h.conformation)}</td>
+        <td class="right">${Math.round(h.temperament)}</td>
+        <td class="right">${Math.round(h.health)}</td>
+        <td class="small">${begCell(h)}</td>
         <td class="right"><b>${fmt(x.studFee)}</b></td>
-      </tr>`;
-    }).join('');
-    const studHead = selMare
-      ? `<tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Beg.</th><th>Passung zu ${esc(selMare.name)}</th><th class="right">Deckgeld</th></tr>`
-      : '<tr><th>Hengst</th><th>Farbe/Alter</th><th>Ext./Int.</th><th>beste Begabung</th><th class="right">Deckgeld</th></tr>';
+      </tr>`).join('') || '<tr><td colspan="6" class="muted small">Kein Hengst passt zu deinen Kriterien.</td></tr>';
 
     return `
       <div class="grid cols-2">
@@ -490,11 +563,16 @@ const UI = (function () {
       ${pregHtml ? '<div style="margin-top:1rem">' + pregHtml + '</div>' : ''}
 
       <div class="card" style="margin-top:1rem">
-        <h3>🏇 Deckstation</h3>
-        <p class="small muted">Fremde Hengste gegen Deckgeld — auch ohne eigenen Spitzenhengst. Zeile anklicken = als Hengst übernehmen.
-        ${selMare ? 'Sortiert nach <b>Passung zu ' + esc(selMare.name) + '</b> (0–100): wie gut der Hengst ihre schwachen Einzelnoten ausgleicht, ohne ihre Stärken zu verlieren.' : 'Wähle oben eine Stute, dann wird nach Passung sortiert.'}
-        Roster wechselt alle 6 Wochen (nächster: Woche ${s.nextStudWeek || 0}).</p>
-        <table><thead>${studHead}</thead><tbody>${studCards}</tbody></table>
+        <h3>🏇 Deckstation — Hengstsuche</h3>
+        <p class="small muted">Setz deine Kriterien; die Liste filtert und sortiert <b>nur danach</b>. Beurteile selbst, welcher Hengst zu deiner Stute passt.
+        Zeile anklicken übernimmt ihn in den Zuchtplaner. ${list.length}/${roster.length} Hengsten entsprechen den Kriterien. Roster wechselt Woche ${s.nextStudWeek || 0}.</p>
+        ${filterBar}
+        <div class="table-wrap" style="margin-top:.5rem">
+          <table>
+            <thead><tr><th>Hengst</th><th class="right">Ext.</th><th class="right">Int.</th><th class="right">Ges.</th><th>Begabungen</th><th class="right">Deckgeld</th></tr></thead>
+            <tbody>${studRows}</tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" style="margin-top:1rem">
@@ -514,39 +592,83 @@ const UI = (function () {
   // --- 🏆 Schauen -----------------------------------------------------
   views.schauen = function () {
     const s = Game.state;
-    const eligible = s.horses.filter((h) => ageYears(h) >= Model.MATURITY_YEARS);
+    const adults = s.horses.filter((h) => ageYears(h) >= Model.MATURITY_YEARS);
 
     const cards = s.shows.map((show) => {
       const entered = show.entered.map((id) => Game.getHorse(id)).filter(Boolean);
-      const canEnter = eligible.filter((h) => show.entered.indexOf(h.id) === -1 && !(h.pregnancy && show.type === 'sport'));
-      const sel = '<select data-show="' + show.id + '" class="enter-sel">' +
-        ['<option value="">Pferd wählen…</option>'].concat(canEnter.map((h) =>
-          '<option value="' + h.id + '">' + esc(h.name) +
-          (show.type === 'sport' ? ' — ' + show.discipline + ' ' + Math.round(h.skill[show.discipline]) : ' — Ext. ' + Math.round(h.conformation)) +
-          '</option>')).join('') + '</select>';
+      // Nur startberechtigte Pferde in der Auswahl; nicht startberechtigte
+      // mit Grund als deaktivierte Option.
+      const opts = ['<option value="">Pferd wählen…</option>'];
+      adults.forEach((h) => {
+        if (show.entered.indexOf(h.id) !== -1) return;
+        const reason = Economy.eligibilityReason(h, show, s.week);
+        const val = show.type === 'sport' ? show.discipline + ' ' + Math.round(h.skill[show.discipline]) : 'Ext. ' + Math.round(h.conformation);
+        opts.push(reason
+          ? '<option value="" disabled>' + esc(h.name) + ' — ' + esc(reason) + '</option>'
+          : '<option value="' + h.id + '">' + esc(h.name) + ' — ' + val + '</option>');
+      });
+      const sel = '<select data-show="' + show.id + '" class="enter-sel">' + opts.join('') + '</select>';
 
-      const res = show._playerResults && show._playerResults.length
-        ? '<div class="small">Ergebnis: ' + show._playerResults.map((r) => esc(r.name) + ' Platz ' + r.place).join(', ') + '</div>'
-        : '';
+      const reqTxt = [
+        show.type === 'sport' ? 'Mindest-' + show.discipline + ' ' + show.minSkill : 'Mindest-Exterieur ' + show.minConf,
+        show.youngster ? 'nur 3–7 J.' : null,
+        'Energie ≥ ' + show.minEnergy + ', Gesundheit ≥ ' + show.minHealth,
+      ].filter(Boolean).join(' · ');
+
+      let resultTbl = '';
+      if (show.done && show._allResults) {
+        const rows = show._allResults.slice(0, 10).map((r) =>
+          '<tr class="' + (r.player ? 'selected' : '') + '"><td>' + r.place + '.</td><td>' + esc(r.name) +
+          (r.player ? ' <b>(du)</b>' : '') + '</td><td class="small">' + esc(r.scoreLabel || '') + '</td>' +
+          '<td class="right small">' + (r.prize ? fmt(r.prize) : '') + '</td></tr>').join('');
+        resultTbl = '<details><summary class="small">Ergebnisliste (' + show._allResults.length + ' Starter)</summary>' +
+          '<table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' + rows + '</tbody></table></details>';
+      }
 
       return `<div class="card stack">
-        <div class="row between"><b>${esc(show.name)}</b><span class="tag">Level ${show.level}</span></div>
-        <div class="small muted">${show.type === 'sport' ? 'Disziplin: ' + show.discipline : 'Zuchtschau (Exterieur, Typ, Abstammung)'} ·
-          Nenngeld ${fmt(show.entryFee)} · Preisgeld gesamt ${fmt(show.prizePool)}</div>
+        <div class="row between"><b>${esc(show.name)}</b><span class="tag">Klasse ${show.level}</span></div>
+        <div class="small muted">${show.type === 'sport' ? show.discipline : 'Zuchtschau'} ·
+          Nenngeld ${fmt(show.entryFee)} · Reise ${fmt(show.travelCost)} · Kraft −${show.energyCost} Energie · Preisgeld ${fmt(show.prizePool)}</div>
+        <div class="small">Zulassung: ${esc(reqTxt)}</div>
         ${entered.length ? '<div class="small">Genannt: ' + entered.map((h) =>
           esc(h.name) + ' <button class="small secondary" data-action="withdraw" data-show="' + show.id + '" data-id="' + h.id + '">×</button>').join(' ') + '</div>' : ''}
-        ${show.done ? '<span class="tag good">gelaufen</span>' + res : sel +
+        ${show.done ? '<span class="tag good">gelaufen</span>' + resultTbl : sel +
           ' <button class="small" data-action="enter-show" data-show="' + show.id + '">Nennen</button>'}
       </div>`;
     }).join('');
 
+    // Letzte Ergebnislisten (bleiben sichtbar, auch wenn der Kalender wechselt).
+    const recent = (s.showResults || []).map((rr) => {
+      const rows = rr.results.map((r) =>
+        '<tr class="' + (r.player ? 'selected' : '') + '"><td>' + r.place + '.</td><td>' + esc(r.name) +
+        (r.player ? ' <b>(du)</b>' : '') + '</td><td class="small">' + esc(r.scoreLabel || '') + '</td>' +
+        '<td class="right small">' + (r.prize ? fmt(r.prize) : '') + '</td></tr>').join('');
+      return '<details><summary class="small"><b>Wo. ' + rr.week + ' — ' + esc(rr.name) + '</b></summary>' +
+        '<table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' +
+        rows + '</tbody></table></details>';
+    }).join('');
+
+    // Saisonwertung: eigene Pferde nach Turnierpunkten je Disziplin.
+    const standings = DISC.concat(['Zucht']).map((disc) => {
+      const ranked = s.horses
+        .filter((h) => h.turnierPunkte && h.turnierPunkte[disc])
+        .sort((a, b) => b.turnierPunkte[disc] - a.turnierPunkte[disc])
+        .slice(0, 3);
+      if (!ranked.length) return '';
+      return '<div class="small"><b>' + esc(disc) + ':</b> ' +
+        ranked.map((h, i) => (i + 1) + '. ' + esc(h.name) + ' (' + h.turnierPunkte[disc] + ')').join(' · ') + '</div>';
+    }).filter(Boolean).join('');
+
     return `
       <div class="card">
         <h3>Schaukalender</h3>
-        <p class="small muted">Genannte Pferde starten automatisch beim nächsten „Woche weiter". Danach kommt ein neuer Kalender.
-        Siege bringen Preisgeld und Prestige und steigern den Pferdewert.</p>
+        <p class="small muted">Je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen) mit Mindestanforderung an die
+        Ausbildung. Genannte Pferde starten beim nächsten „Woche weiter"; ein Turnier kostet Nenngeld, Reisekosten und Energie.
+        Platzierungen bringen Preisgeld, Prestige und Saisonpunkte.</p>
       </div>
-      <div class="grid cols-2" style="margin-top:1rem">${cards}</div>`;
+      <div class="grid cols-2" style="margin-top:1rem">${cards}</div>
+      ${recent ? '<div class="card" style="margin-top:1rem"><h3>📋 Letzte Ergebnisse</h3>' + recent + '</div>' : ''}
+      ${standings ? '<div class="card" style="margin-top:1rem"><h3>🏅 Saisonwertung (deine Pferde)</h3>' + standings + '</div>' : ''}`;
   };
 
   // --- 🔨 Auktion ----------------------------------------------------
@@ -600,27 +722,44 @@ const UI = (function () {
         <div class="geno-tokens">${esc(phenoOf(h).tokens)}</div>
         <div class="small">Exterieur ${Math.round(h.conformation)} · Interieur ${Math.round(h.temperament)} · Gesundheit ${Math.round(h.health)}</div>
         <div class="statline"><span>${best}</span>${bar(h.skill[best], h.potential[best])}<span class="right">${Math.round(h.potential[best])}</span></div>
+        <div class="small">Marktlage: ${demandTag(h)}</div>
         <div class="row between"><span>Preis</span><b>${fmt(o.price)}</b> <span class="muted small">(Schätzwert ${fmt(Game.valuation(h))})</span></div>
         <button class="small" data-action="buy-market" data-idx="${i}" ${s.cash < o.price || Game.stallFree() < 1 ? 'disabled' : ''}>Kaufen</button>
       </div>`;
     }).join('');
 
+    const dov = Economy.demandOverview(s);
+    const dline = (arr) => arr.map((r) => '<span class="tag ' + (r.pct >= 8 ? 'good' : r.pct <= -8 ? 'warn' : '') + '">' + esc(r.label) + ' ' + (r.pct >= 0 ? '+' : '') + r.pct + ' %</span>').join(' ');
+    const marktlage = `
+      <div class="card">
+        <h3>📊 Marktlage (Angebot &amp; Nachfrage)</h3>
+        <p class="small muted">Preise und Verkaufstempo folgen der Nachfrage im jeweiligen Segment (Rasse + beste Disziplin, dazu Sonderfarben).
+        Verkaufst du viel aus einem Segment, drückst du dort selbst die Preise.</p>
+        <div class="row between"><span class="small">gefragt</span><span>${dline(dov.hot)}</span></div>
+        <div class="row between"><span class="small">flau</span><span>${dline(dov.cold)}</span></div>
+        <div class="row between"><span class="small">Sonderfarben</span><span>${dline([{ label: 'Schecken/Verdünnungen', pct: dov.rareColor }])}</span></div>
+      </div>`;
+
     const listings = s.saleListings.map((l) => {
       const h = Game.getHorse(l.horseId);
       if (!h) return '';
-      return '<tr><td>' + esc(h.name) + '</td><td>' + fmt(l.price) + '</td><td>' + l.weeks + ' Wo.</td>' +
+      const mp = Game.marketPrice(h);
+      const over = l.price > mp * 1.15;
+      return '<tr><td>' + esc(h.name) + '</td><td class="' + (over ? 'cmp-bad' : '') + '">' + fmt(l.price) + '</td>' +
+        '<td class="muted small">' + fmt(mp) + '</td><td>' + l.weeks + ' Wo.</td>' +
         '<td class="right"><button class="small secondary" data-action="unlist" data-id="' + h.id + '">zurückziehen</button></td></tr>';
     }).join('');
 
     return `
-      <div class="card">
+      ${marktlage}
+      <div class="card" style="margin-top:1rem">
         <h3>Markt — Angebot erneuert sich alle 2 Wochen (nächste: Woche ${s.nextMarketWeek})</h3>
         <p class="small muted">Freie Stallplätze: <b>${Game.stallFree()}</b>. Bessere Pferde erscheinen mit steigendem Gestüts-Rang.</p>
       </div>
       <div class="grid cols-3" style="margin-top:1rem">${offers}</div>
       <div class="card" style="margin-top:1rem">
         <h3>Deine Verkaufsangebote</h3>
-        ${listings ? '<table><thead><tr><th>Pferd</th><th>Preis</th><th>gelistet</th><th></th></tr></thead><tbody>' + listings + '</tbody></table>'
+        ${listings ? '<table><thead><tr><th>Pferd</th><th>dein Preis</th><th>Marktwert</th><th>gelistet</th><th></th></tr></thead><tbody>' + listings + '</tbody></table>'
           : '<p class="muted small">Keine aktiven Verkaufsangebote. Im Tab „Stall" ein Pferd anbieten.</p>'}
       </div>`;
   };
@@ -657,11 +796,17 @@ const UI = (function () {
 
   function onViewChange(e) {
     const t = e.target;
-    if (t.dataset.action === 'set-focus') {
+    if (t.dataset.action === 'set-plan') {
+      const slots = document.querySelectorAll('.plan-slot[data-id="' + t.dataset.id + '"]');
+      const arr = Array.from(slots).map((s) => s.value || null);
+      Game.setTrainingPlan(t.dataset.id, arr);
+      // gezielt nur den Detailbereich neu zeichnen wäre feiner; render() reicht.
+      render();
+    } else if (t.dataset.action === 'set-focus') {
       Game.setTrainingFocus(t.dataset.id, t.value);
-      toast(t.value ? 'Trainings-Fokus: ' + t.value : 'Fokus entfernt.');
     } else if (t.dataset.action === 'set-feed') { Game.setFeed(parseInt(t.value, 10)); toast('Fütterung: ' + Economy.FEED[Game.state.feedLevel].label); }
     else if (t.dataset.action === 'set-care') { Game.setCare(parseInt(t.value, 10)); toast('Pflege: ' + Economy.CARE[Game.state.careLevel].label); }
+    else if (t.dataset.action === 'stud-filter' && !t.dataset.toggle) { studFilter[t.dataset.field] = t.value; render(); }
     else if (t.dataset.action === 'pick-sire') { breedSire = t.value || null; render(); }
     else if (t.dataset.action === 'pick-dam') { breedDam = t.value || null; render(); }
   }
@@ -674,7 +819,15 @@ const UI = (function () {
 
     if (a === 'select-horse') { selectedId = el.dataset.id; render(); return; }
 
-    if (a === 'pick-stud') { breedSire = el.dataset.id; showTab('zucht'); toast('Hengst aus Deckstation gewählt.'); return; }
+    if (a === 'pick-stud') { breedSire = el.dataset.id; render(); toast('Hengst in den Zuchtplaner übernommen.'); return; }
+
+    if (a === 'stud-filter' && el.dataset.toggle) { studFilter.dir *= -1; render(); return; }
+    if (a === 'stud-filter-reset') {
+      studFilter = { breed: '', exMin: '', disc: '', begMin: '', inMin: '', heMin: '', feeMax: '', sort: 'fee', dir: 1 };
+      render(); return;
+    }
+
+    if (a === 'goto-tab') { showTab(el.dataset.tab); return; }
 
     if (a === 'rename-horse') {
       const h = Game.getHorse(el.dataset.id);
@@ -696,8 +849,9 @@ const UI = (function () {
 
     if (a === 'list-sale') {
       const h = Game.getHorse(el.dataset.id);
-      const def = Game.valuation(h);
-      const p = prompt('Verkaufspreis für ' + h.name + ' (Schätzwert ' + fmt(def) + '):', def);
+      const mp = Game.marketPrice(h);
+      const p = prompt('Verkaufspreis für ' + h.name + ' — Schätzwert ' + fmt(Game.valuation(h)) +
+        ', Marktwert aktuell ' + fmt(mp) + ' (nahe Marktwert verkauft sich am schnellsten):', mp);
       if (p) { const r = Game.listForSale(h.id, parseInt(p, 10)); if (!r.ok) toast(r.msg, true); }
       return;
     }

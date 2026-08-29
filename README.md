@@ -41,18 +41,27 @@ auf dem Startbildschirm alle Regeln.
   Altersverschleiß), Chronik.
 - **🐴 Stall** – jedes Pferd mit Genotyp, den sechs Begabungen (Ausbildung
   vs. Potenzial), Exterieur (6 Einzelnoten), Interieur (5 Einzelnoten),
-  Gesundheit, Energie. Trainings-Fokus setzen, verkaufen, in die Auktion geben.
-- **🧬 Zucht** – eigener Hengst **oder Deckstation** (fremde Hengste gegen
-  Deckgeld). Die Vorschau zeigt die erwarteten Fohlenwerte, den Streubereich,
-  COI, Empfängnischance, mögliche Fohlenfarben und ob der Hengst die
-  Begabungen der Stute hebt oder senkt.
-- **🏆 Schauen** – Sport-Turniere je Disziplin und Zuchtschauen. Preisgeld
-  und Prestige, steigert den Pferdewert.
+  Gesundheit (5 Einzelnoten: Fundament & Sehnen, Atemwege, Herz-Kreislauf,
+  Hufe, Immunsystem), Energie. **Wochen-Trainingsplan** aus bis zu 6 Einheiten,
+  wird beim „Woche weiter" abgearbeitet (kostet Energie, Ruhetage erholen).
+- **🧬 Zucht** – eigener Hengst **oder Deckstation**. Die Deckstation ist ein
+  **Suchwerkzeug**: du setzt die Kriterien (Rasse, Mindest-Exterieur/-Interieur/
+  -Gesundheit, Mindest-Begabung, max. Deckgeld) und Sortierung – das Spiel
+  filtert nur danach und empfiehlt nichts. Die Vorschau zeigt je Einzelnote
+  Hengst/Stute/Erwartung, COI, Farb- und Gesundheitsprognose.
+- **🏆 Schauen** – je Disziplin eigene Prüfungsklassen (E → S bzw. Rennklassen)
+  mit Mindestanforderung an die Ausbildung, Jungpferde-Prüfungen (3–7 J.),
+  Nenn- + Reisekosten, Energieverbrauch. Ergebnislisten, Saisonpunkte je
+  Disziplin, Saisonwertung.
 - **🔨 Auktion** – gegen KI bieten, eigene Pferde mit Limit einliefern.
-- **🛒 Markt** – Pferde kaufen und verkaufen.
+- **🛒 Markt** – kaufen und verkaufen. **Angebot & Nachfrage**: Preise und
+  Verkaufstempo folgen der Nachfrage je Segment (Rasse + beste Disziplin +
+  Sonderfarben); viel verkaufen drückt die Preise im eigenen Segment.
 
-Mit **„Woche weiter"** vergeht Zeit: Pferde altern und trainieren, Fohlen
-werden geboren, Turniere und Auktionen laufen ab, Unterhalt wird fällig.
+Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel
+noch offen ist. Mit **„Woche weiter"** vergeht Zeit: Nachfrage driftet, Pferde
+altern und arbeiten ihren Trainingsplan ab, Fohlen werden geboren, Turniere
+und Auktionen laufen, Unterhalt wird fällig.
 
 ## Wie die Werte vererbt werden
 
