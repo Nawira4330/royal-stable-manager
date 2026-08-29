@@ -71,8 +71,9 @@ auf dem Startbildschirm alle Regeln.
     dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
     Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**
     die Summe, die du gutgeschrieben bekommst, und bekommt von dir eine
-    **Quittung** zurück – erst deren Einlösen schließt die Abrechnung bei ihm ab
-    (so ist geprüft, dass der Code wirklich eingelöst wurde).
+    **Quittung** zurück – nur deren Einlösen schließt die Abrechnung bei ihm ab
+    (so ist geprüft, dass der Code wirklich eingelöst wurde). Verlorene Quittung:
+    der Besitzer erzeugt sie über denselben Abrechnungscode neu.
   Das Spiel macht **keine Netzwerkanfragen**.
 
 Auf dem Tab **Gestüt** steht eine **To-do-Liste**, was vor dem Wochenwechsel

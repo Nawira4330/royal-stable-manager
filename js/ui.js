@@ -248,16 +248,16 @@ const UI = (function () {
     ).join('');
     const pending = (s.friendStuds || []).filter((x) => x.pendingSettle).map((x) =>
       '<div class="row between"><span>🧾 Abrechnung ' + fmt(x.pendingSettle.amount) + ' für ' + esc(x.horse.name) +
-      ' an ' + esc(x.friend) + ' — <b>wartet auf Bestätigung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
-      '<button class="small secondary" data-action="resend-settle" data-id="' + x.horse.id + '">Code</button> ' +
-      '<button class="small secondary" data-action="clear-settle" data-id="' + x.horse.id + '">als erledigt</button></span></div>'
+      ' an ' + esc(x.friend) + ' — <b>wartet auf Quittung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
+      '<button class="small secondary" data-action="resend-settle" data-id="' + x.horse.id + '">Code nochmal</button></span></div>'
     ).join('');
     if (!offers && !purch && !debts && !pending) return '';
     return '<div class="trade-list" style="margin-top:.6rem">' +
       (offers ? '<div class="small muted">Deine offenen Verkaufsangebote:</div>' + offers : '') +
       (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') +
       (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen an Freunde:</div>' + debts : '') +
-      (pending ? '<div class="small muted" style="margin-top:.3rem">Decktaxe-Abrechnungen ohne Bestätigung:</div>' + pending : '') + '</div>';
+      (pending ? '<div class="small muted" style="margin-top:.3rem">Decktaxe-Abrechnungen ohne Quittung des Besitzers:</div>' + pending +
+        '<div class="small muted">Geht die Quittung verloren, kann der Besitzer sie über denselben Abrechnungscode neu erzeugen. Notfalls „Hengst entfernen".</div>' : '') + '</div>';
   }
 
   function herdMiniTable() {
@@ -971,13 +971,6 @@ const UI = (function () {
       }
       return;
     }
-    if (a === 'clear-settle') {
-      const x = (Game.state.friendStuds || []).find((e) => e.horse.id === el.dataset.id);
-      if (x && x.pendingSettle && confirm('Abrechnung über ' + fmt(x.pendingSettle.amount) + ' ohne Quittung als erledigt markieren? Nur tun, wenn der Besitzer den Erhalt bestätigt hat.')) {
-        Game.clearPendingSettle(el.dataset.id); toast('Als erledigt markiert.'); render();
-      }
-      return;
-    }
     if (a === 'remove-friend-stud') { Game.removeFriendStud(el.dataset.id); toast('Freundes-Deckhengst entfernt.'); return; }
 
     if (a === 'rename-horse') {
@@ -1134,6 +1127,7 @@ const UI = (function () {
       stud: 'Deckhengst übernehmen',
       payout: 'Decktaxe annehmen (' + fmt(p.amount) + ')',
       confirm: 'Abrechnung abschließen',
+      reissue: 'Quittung erneut erzeugen',
     }[p.action];
     $('#trade-actions').innerHTML =
       '<button data-trade="' + p.action + '"' + (p.warn && (p.action === 'receive') ? ' disabled' : '') + '>' + btn + '</button>' +
@@ -1154,11 +1148,12 @@ const UI = (function () {
     else if (act === 'stud') r = Game.acceptStud(tradeRaw);
     else if (act === 'payout') r = Game.acceptPayout(tradeRaw);
     else if (act === 'confirm') r = Game.confirmPayout(tradeRaw);
+    else if (act === 'reissue') r = Game.reissueReceipt(tradeRaw);
     if (!r || !r.ok) { toast((r && r.msg) || 'Fehlgeschlagen.', true); render(); return; }
-    if (act === 'payout') {
+    if (act === 'payout' || act === 'reissue') {
       showCode('Quittung: Decktaxe erhalten',
         'Schick diese Quittung an den Zahler zurück, damit er die Abrechnung bei sich abschließen kann.', r.confirmCode);
-      toast('Decktaxe ' + fmt(r.amount) + ' erhalten.');
+      if (act === 'payout') toast('Decktaxe ' + fmt(r.amount) + ' erhalten.');
       render();
       return;
     }
