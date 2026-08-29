@@ -194,7 +194,7 @@ const Game = (function () {
     const entry = (state.studRoster || []).find((x) => x.horse.id === id);
     if (entry) return { horse: entry.horse, external: true, fee: entry.studFee };
     const fr = (state.friendStuds || []).find((x) => x.horse.id === id);
-    if (fr) return { horse: fr.horse, external: true, fee: fr.studFee, friend: fr.friend };
+    if (fr) return { horse: fr.horse, external: true, fee: fr.coBreed ? 0 : fr.studFee, friend: fr.friend, coBreed: fr.coBreed, coShare: fr.share };
     return null;
   }
   function stallFree() { return Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0); }
@@ -447,6 +447,7 @@ const Game = (function () {
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += order.reward;
     recordSale(h.name, order.reward);
+    payCoBreedShare(h, order.reward);
     Economy.applySaleImpact(state, h);
     removeHorse(horseId);
     state.breedingOrders = state.breedingOrders.filter((o) => o.id !== orderId);
@@ -547,6 +548,7 @@ const Game = (function () {
     if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
     const dm = clamp(Economy.demandMultiplier(state, h), 0.85, 1.12);
     const v = Math.round(valuation(h) * 0.5 * dm);
+    payCoBreedShare(h, v);
     Economy.applySaleImpact(state, h);
     removeHorse(horseId);
     addCash(v, 'Schnellverkauf ' + h.name + ' an Händler');
@@ -786,6 +788,13 @@ const Game = (function () {
         text: (d.stud || friendLabel(d.from)) + ' (' + d.disc + ' Kl. ' + d.level + '): ' + (d.horse ? d.horse.name : 'ihr Pferd') + ' ' +
           theirS.toFixed(1) + ' — dein Pferd ' + myS.toFixed(1) + ' → ' + (myS >= theirS ? 'du gewinnst!' : 'du verlierst.') };
     }
+    if (d.type === 'CZ') {
+      if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Co-Zucht-Code.' };
+      if (already) return { ok: false, msg: 'Diesen Co-Zucht-Hengst hast du schon übernommen.' };
+      return { ok: true, action: 'costud', kind: 'Co-Zucht-Angebot', from: d.from, share: d.share, horse: d.horse,
+        text: friendLabel(d.from) + ' bietet ' + (d.horse ? d.horse.name : 'einen Hengst') + ' zur Co-Zucht an: kein Deckgeld, dafür ' +
+          d.share + ' % vom Verkaufserlös jeder Nachzucht.' };
+    }
     // SD Deckhengst
     if (d.from === mine) return { ok: false, msg: 'Das ist dein eigener Deckhengst-Code.' };
     if (already) return { ok: false, msg: 'Diesen Deckhengst hast du schon übernommen.' };
@@ -823,6 +832,7 @@ const Game = (function () {
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += off.price;
     recordSale(h.name, off.price);
+    payCoBreedShare(h, off.price);
     Economy.applySaleImpact(state, h);
     h.offered = false;
     removeHorse(h.id);
@@ -875,6 +885,53 @@ const Game = (function () {
     return { ok: true, name: stud.name };
   }
 
+  // --- Co-Zucht: Deckhengst ohne Deckgeld gegen prozentualen Anteil am
+  //     Verkaufserlös der Nachzucht (abgerechnet wie die Decktaxe).
+  function shareCoStud(horseId, sharePct) {
+    const h = getHorse(horseId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.sex !== 'hengst') return { ok: false, msg: h.name + ' ist kein Hengst.' };
+    if (Model.ageYears(h, state.week) < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung.' };
+    sharePct = clamp(Math.round(sharePct || 40), 1, 80);
+    const code = Friend.encodeCoStud(h, sharePct, state.friendCode, state.week);
+    log('🤝 Co-Zucht angeboten: ' + h.name + ' — ' + sharePct + ' % Anteil am Verkaufserlös der Nachzucht. Code teilen.', 'info');
+    return { ok: true, code: code };
+  }
+  function acceptCoStud(text) {
+    const p = previewCode(text);
+    if (!p.ok || p.action !== 'costud') return { ok: false, msg: p.msg || 'Kein gültiger Co-Zucht-Code.' };
+    const d = Friend.decode(text);
+    const stud = Model.hydratePackedHorse(d.horse, state.week, 'Co-Zucht (Freund)');
+    stud.external = true;
+    state.friendStuds.push({ horse: stud, studFee: 0, friend: d.from, elite: false, coBreed: true, share: d.share });
+    markRedeemed(d.hash);
+    rememberFriend(d.from);
+    log('🤝 Co-Zucht-Deckhengst von ' + friendLabel(d.from) + ': ' + stud.name + ' (kein Deckgeld, ' + d.share +
+      ' % vom Verkauf der Fohlen an ' + friendLabel(d.from) + ').', 'good');
+    save(); emit();
+    return { ok: true, name: stud.name };
+  }
+  // Anteil des Co-Zucht-Partners beim Verkauf einer Nachzucht: sofort von der
+  // Kasse abziehen (netto behältst du nur deinen Anteil) und als offene
+  // Abrechnung an den Partner anschreiben.
+  function payCoBreedShare(h, price) {
+    if (!h || !h.coBred || !(price > 0)) return;
+    const cb = h.coBred;
+    const share = Math.round(price * (cb.share || 0) / 100);
+    if (share <= 0) return;
+    state.cash -= share;
+    const entry = (state.friendStuds || []).find((x) => x.coBreed && x.friend === cb.partner);
+    if (entry) {
+      entry.owed = (entry.owed || 0) + share;
+      entry.owedCount = (entry.owedCount || 0) + 1;
+      log('🤝 Co-Zucht: ' + cb.share + ' %-Anteil ' + Economy.fmtEur(share) + ' aus dem Verkauf von ' + h.name +
+        ' geht an ' + friendLabel(cb.partner) + ' (offen: ' + Economy.fmtEur(entry.owed) + ').', 'cost');
+    } else {
+      log('🤝 Co-Zucht-Anteil ' + Economy.fmtEur(share) + ' aus ' + h.name + ' fällt an — ' +
+        friendLabel(cb.partner) + ' ist nicht mehr in deiner Deckstation, das Geld verfällt.', 'warn');
+    }
+  }
+
   function removeFriendStud(horseId) {
     state.friendStuds = (state.friendStuds || []).filter((x) => x.horse.id !== horseId);
     save(); emit();
@@ -891,7 +948,8 @@ const Game = (function () {
     x.pendingSettle = { id: id, amount: x.owed, count: x.owedCount || 0, sentWeek: state.week };
     x.owed = 0; x.owedCount = 0;
     const code = Friend.encodePayout(x.friend, state.friendCode, x.pendingSettle.amount, x.pendingSettle.count, x.horse.name, id);
-    log('Decktaxe-Abrechnung verschickt: ' + Economy.fmtEur(x.pendingSettle.amount) + ' an ' + x.friend + ' für ' + x.horse.name + ' — wartet auf Bestätigung.', 'info');
+    log((x.coBreed ? '🤝 Co-Zucht-Abrechnung' : 'Decktaxe-Abrechnung') + ' verschickt: ' + Economy.fmtEur(x.pendingSettle.amount) +
+      ' an ' + friendLabel(x.friend) + ' für ' + x.horse.name + ' — wartet auf Bestätigung.', 'info');
     save(); emit();
     return { ok: true, code: code };
   }
@@ -964,7 +1022,7 @@ const Game = (function () {
     let friendEntry = null;
     if (sr.friend) {
       friendEntry = (state.friendStuds || []).find((x) => x.horse.id === sire.id);
-      if (friendEntry && (friendEntry.owed || 0) >= (friendEntry.studFee || 1) * 5) {
+      if (friendEntry && !friendEntry.coBreed && (friendEntry.owed || 0) >= (friendEntry.studFee || 1) * 5) {
         return { error: 'Zu viele offene Bedeckungen bei ' + sire.name + ' — schick erst eine Decktaxe-Abrechnung an ' + sr.friend + ' (Tab Gestüt → Freunde).' };
       }
     }
@@ -998,11 +1056,14 @@ const Game = (function () {
     state.cash -= plan.fee;
     // Bei einem Freundes-Deckhengst wandert die Gebühr in eine offene
     // Abrechnung an den Besitzer (per Code auszahlbar).
-    if (plan.friend && plan.friendEntry) {
+    if (plan.friend && plan.friendEntry && !plan.friendEntry.coBreed) {
       plan.friendEntry.owed = (plan.friendEntry.owed || 0) + plan.fee;
       plan.friendEntry.owedCount = (plan.friendEntry.owedCount || 0) + 1;
       log('Decktaxe ' + Economy.fmtEur(plan.fee) + ' für ' + plan.sire.name + ' geht an ' + plan.friend +
         ' (offen: ' + Economy.fmtEur(plan.friendEntry.owed) + ' aus ' + plan.friendEntry.owedCount + ' Bedeckungen).', 'cost');
+    } else if (plan.friend && plan.friendEntry && plan.friendEntry.coBreed) {
+      log('🤝 Co-Zucht mit ' + plan.sire.name + ' (' + friendLabel(plan.friend) + ', ' + plan.friendEntry.share +
+        ' % Anteil am Fohlen-Verkauf) — kein Deckgeld.', 'info');
     }
     log('Deckakt ' + plan.dam.name + ' × ' + plan.sire.name +
       (plan.external ? ' (Deckstation)' : '') +
@@ -1020,6 +1081,8 @@ const Game = (function () {
       external: !!plan.external,
       sireSnapshot: Model.parentSnapshot(plan.sire),
       weeksLeft: Model.GESTATION_WEEKS,
+      coBreed: (plan.friend && plan.friendEntry && plan.friendEntry.coBreed)
+        ? { partner: plan.friend, partnerStud: plan.sire.name, share: plan.friendEntry.share } : null,
     };
     log(plan.dam.name + ' ist trächtig! Abfohlung in ' + Model.GESTATION_WEEKS + ' Wochen.', 'good');
     save(); emit();
@@ -1242,6 +1305,7 @@ const Game = (function () {
           breed: dam.breed, genotype: dam.genotype, potential: dam.potential, conformation: dam.conformation,
           temperament: dam.temperament, quality: dam.quality, ancestors: {}, skill: {},
         };
+      const coBreedTag = dam.pregnancy.coBreed || null;
       const result = Model.breed(sire, dam, state.week);
       dam.pregnancy = null;
       if (!result.alive) {
@@ -1277,6 +1341,7 @@ const Game = (function () {
       Model.adjustHealth(foal, vet.foalHealth + feed.foalHealth - (foal._complication || 0));
       delete foal._complication;
       foal.name = foalName();
+      if (coBreedTag) foal.coBred = coBreedTag;
       state.stats.foalsBred += 1;
       // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
       const sireHerd = sire && sire.id ? getHorse(sire.id) : null;
@@ -1308,6 +1373,7 @@ const Game = (function () {
         state.stats.horsesSold += 1;
         state.stats.totalEarnings += paid;
         recordSale(h.name, paid);
+        payCoBreedShare(h, paid);
         Economy.applySaleImpact(state, h);
         log('Verkauft: ' + h.name + ' für ' + Economy.fmtEur(paid) + ' (nach ' + s.weeks + ' Wochen).', 'good');
         removeHorse(s.horseId);
@@ -1363,6 +1429,7 @@ const Game = (function () {
             state.stats.horsesSold += 1;
             state.stats.totalEarnings += res.amount;
             recordSale(h.name, res.amount);
+            payCoBreedShare(h, res.amount);
             Economy.applySaleImpact(state, h);
             removeHorse(h.id);
             log('Auktion: ' + h.name + ' für ' + Economy.fmtEur(res.amount) + ' verkauft.', 'good');
@@ -1606,6 +1673,7 @@ const Game = (function () {
     state.stats.horsesSold += 1;
     state.stats.totalEarnings += o.price;
     recordSale(h.name, o.price);
+    payCoBreedShare(h, o.price);
     Economy.applySaleImpact(state, h);
     removeHorse(o.horseId);
     log('Angebot angenommen: ' + h.name + ' für ' + Economy.fmtEur(o.price) + ' verkauft.', 'good');
@@ -1665,7 +1733,7 @@ const Game = (function () {
       text: 'Du wartest auf ' + state.pendingPurchases.length + ' Lieferung' + (state.pendingPurchases.length > 1 ? 'en' : '') + ' von Freunden' });
     const debt = (state.friendStuds || []).reduce((sum, x) => sum + (x.owed || 0), 0);
     if (debt > 0) t.push({ icon: '💶', tab: 'gestüt', kind: 'info',
-      text: 'Offene Decktaxe an Freunde: ' + Economy.fmtEur(debt) + ' — Abrechnungs-Code erstellen' });
+      text: 'Offene Decktaxe / Co-Zucht-Anteile an Freunde: ' + Economy.fmtEur(debt) + ' — Abrechnungs-Code erstellen' });
 
     const ungekört = state.horses.filter((h) => h.sex === 'hengst' && !h.noPapers && !h.isMix &&
       Model.ageYears(h, state.week) >= Model.MATURITY_YEARS && Model.approvalRank(h.zuchtzulassung) < 2);
@@ -1777,6 +1845,8 @@ const Game = (function () {
     acceptDelivery: acceptDelivery,
     shareStud: shareStud,
     acceptStud: acceptStud,
+    shareCoStud: shareCoStud,
+    acceptCoStud: acceptCoStud,
     settleFriendStud: settleFriendStud,
     acceptPayout: acceptPayout,
     confirmPayout: confirmPayout,

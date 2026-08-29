@@ -73,6 +73,7 @@ const UI = (function () {
     if (br) b.push('<span class="tag rare" title="Ø Fohlenqualität ' + br.avg.toFixed(2) + ' aus ' + br.count + ' Fohlen">Vererber ' + '★'.repeat(br.stars) + '</span>');
     if (h.genoTested === false) b.push('<span class="tag">🔬 nicht farbgetestet</span>');
     else Model.lethalCarriers(h).forEach((c) => b.push('<span class="tag warn" title="Verdeckter Letalfarb-Träger">' + esc(c) + '-Träger</span>'));
+    if (h.coBred) b.push('<span class="tag" title="Beim Verkauf gehen ' + h.coBred.share + ' % an den Co-Zucht-Partner">🤝 Co-Zucht ' + h.coBred.share + ' %</span>');
     return b.join(' ');
   }
 
@@ -486,12 +487,12 @@ const UI = (function () {
       '<div>⏳ Kaufgebot für „' + esc(q.horseName) + '" (' + fmt(q.price) + ') an ' + nm(q.seller) + ' — wartet auf Lieferung</div>'
     ).join('');
     const debts = (s.friendStuds || []).filter((x) => x.owed > 0).map((x) =>
-      '<div class="row between"><span>💶 Decktaxe für ' + esc(x.horse.name) + ' (Besitzer ' + nm(x.friend) + '): <b>' +
-      fmt(x.owed) + '</b> aus ' + (x.owedCount || 0) + ' Bedeckungen</span>' +
+      '<div class="row between"><span>' + (x.coBreed ? '🤝 Co-Zucht-Anteil (' + x.share + ' %)' : '💶 Decktaxe') + ' für ' + esc(x.horse.name) + ' (Besitzer ' + nm(x.friend) + '): <b>' +
+      fmt(x.owed) + '</b> aus ' + (x.owedCount || 0) + (x.coBreed ? ((x.owedCount === 1 ? ' Verkauf' : ' Verkäufen')) : ' Bedeckungen') + '</span>' +
       '<button class="small" data-action="settle-stud" data-id="' + x.horse.id + '">Abrechnungs-Code erstellen</button></div>'
     ).join('');
     const pending = (s.friendStuds || []).filter((x) => x.pendingSettle).map((x) =>
-      '<div class="row between"><span>🧾 Abrechnung ' + fmt(x.pendingSettle.amount) + ' für ' + esc(x.horse.name) +
+      '<div class="row between"><span>🧾 ' + (x.coBreed ? 'Co-Zucht-' : '') + 'Abrechnung ' + fmt(x.pendingSettle.amount) + ' für ' + esc(x.horse.name) +
       ' an ' + nm(x.friend) + ' — <b>wartet auf Quittung</b> (Wo. ' + x.pendingSettle.sentWeek + ')</span><span>' +
       '<button class="small secondary" data-action="resend-settle" data-id="' + x.horse.id + '">Code nochmal</button></span></div>'
     ).join('');
@@ -499,7 +500,7 @@ const UI = (function () {
     return '<div class="trade-list" style="margin-top:.6rem">' +
       (offers ? '<div class="small muted">Deine offenen Verkaufsangebote:</div>' + offers : '') +
       (purch ? '<div class="small muted" style="margin-top:.3rem">Offene Kaufgebote:</div>' + purch : '') +
-      (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen an Freunde:</div>' + debts : '') +
+      (debts ? '<div class="small muted" style="margin-top:.3rem">Offene Decktaxen / Co-Zucht-Anteile an Freunde:</div>' + debts : '') +
       (pending ? '<div class="small muted" style="margin-top:.3rem">Decktaxe-Abrechnungen ohne Quittung des Besitzers:</div>' + pending +
         '<div class="small muted">Geht die Quittung verloren, kann der Besitzer sie über denselben Abrechnungscode neu erzeugen. Notfalls „Hengst entfernen".</div>' : '') + '</div>';
   }
@@ -744,6 +745,7 @@ const UI = (function () {
         <div class="row">
           <button class="small secondary" data-action="offer-horse" data-id="${h.id}">👥 An Freund verkaufen (Code)</button>
           ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="share-stud" data-id="' + h.id + '">👥 Deckhengst freigeben (Code)</button>' : ''}
+          ${h.sex === 'hengst' && adult ? '<button class="small secondary" data-action="share-costud" data-id="' + h.id + '">🤝 Co-Zucht anbieten (Code)</button>' : ''}
           ${adult ? '<button class="small secondary" data-action="make-challenge" data-id="' + h.id + '">⚔ Turnier-Challenge (Code)</button>' : ''}
         </div>
         ${h.sex === 'hengst' && adult && (Model.approvalRank(h.zuchtzulassung) >= 2 || h.studService) ? studServiceBlock(h)
@@ -1020,12 +1022,12 @@ const UI = (function () {
     const begCell = (h) => DISC.map((d) => '<span class="' + (f.sort === d ? 'tag' : 'muted') + '">' + d.slice(0, 2) + ' ' + Math.round(h.potential[d]) + '</span>').join(' ');
     const studRows = list.map(({ x, h, friend }) => `
       <tr class="clickable ${breedSire === h.id ? 'selected' : ''}" data-action="pick-stud" data-id="${h.id}">
-        <td><b>${esc(h.name)}</b>${x.elite ? ' <span class="tag rare">Elite</span>' : ''}${friend ? ' <span class="tag good">Freund ' + esc(friend) + '</span>' : ''}<br><span class="muted small">${esc(h.breed)} · ${esc(phenoOf(h).base)} · ${ageYears(h).toFixed(0)} J.</span></td>
+        <td><b>${esc(h.name)}</b>${x.elite ? ' <span class="tag rare">Elite</span>' : ''}${friend ? ' <span class="tag good">Freund ' + esc(Game.friendLabel ? Game.friendLabel(friend).split(' (')[0] : friend) + '</span>' : ''}${x.coBreed ? ' <span class="tag">🤝 Co-Zucht ' + x.share + ' %</span>' : ''}<br><span class="muted small">${esc(h.breed)} · ${esc(phenoOf(h).base)} · ${ageYears(h).toFixed(0)} J.</span></td>
         <td class="right">${Math.round(h.conformation)}</td>
         <td class="right">${Math.round(h.temperament)}</td>
         <td class="right">${Math.round(h.health)}</td>
         <td class="small">${begCell(h)}</td>
-        <td class="right"><b>${fmt(x.studFee)}</b>${friend ? '<br><button class="small secondary" data-action="remove-friend-stud" data-id="' + h.id + '">entfernen</button>' : ''}</td>
+        <td class="right"><b>${x.coBreed ? '<span class="muted small">kein Deckgeld</span>' : fmt(x.studFee)}</b>${friend ? '<br><button class="small secondary" data-action="remove-friend-stud" data-id="' + h.id + '">entfernen</button>' : ''}</td>
       </tr>`).join('') || '<tr><td colspan="6" class="muted small">Kein Hengst passt zu deinen Kriterien.</td></tr>';
 
     return `
@@ -1556,6 +1558,16 @@ const UI = (function () {
         'Schick den Code an einen Freund. Er tritt mit einem eigenen Pferd an — beide werden mit demselben Seed (gleiche Tagesform) bewertet.', r.code);
       return;
     }
+    if (a === 'share-costud') {
+      const h = Game.getHorse(el.dataset.id);
+      const share = prompt('Co-Zucht mit „' + h.name + '": kein Deckgeld, dafür ein prozentualer Anteil am Verkaufserlös jeder Nachzucht.\nAnteil in % (1–80):', '40');
+      if (share == null) return;
+      const r = Game.shareCoStud(h.id, parseInt(share, 10));
+      if (!r.ok) { toast(r.msg, true); return; }
+      UI.showCode('Co-Zucht-Code: ' + h.name,
+        'Mehrfach nutzbar. Der Freund züchtet ohne Deckgeld; beim Verkauf der Fohlen bekommst du deinen Anteil (über die Abrechnung wie bei der Decktaxe).', r.code);
+      return;
+    }
     if (a === 'share-stud') {
       const h = Game.getHorse(el.dataset.id);
       const def = 800 + Math.round(Game.valuation(h) * 0.03);
@@ -1793,6 +1805,7 @@ const UI = (function () {
     if (p.text) body += '<p>' + esc(p.text) + '</p>';
     if (p.action === 'bid') body += '<div class="row between"><span>Preis</span><b>' + fmt(p.price) + '</b></div>';
     if (p.action === 'stud') body += '<div class="row between"><span>Deckgeld je Bedeckung</span><b>' + fmt(p.fee) + '</b></div>';
+    if (p.action === 'costud') body += '<div class="row between"><span>Anteil am Fohlen-Verkauf</span><b>' + p.share + ' %</b></div>';
     if (p.action === 'challenge') {
       const elig = Game.state.horses.filter((h) => ageYears(h) >= Model.MATURITY_YEARS && !h.offered);
       body += elig.length
@@ -1809,6 +1822,7 @@ const UI = (function () {
       sell: 'An ' + p.from + ' verkaufen (' + fmt(p.price) + ')',
       receive: 'Übernehmen & ' + fmt(p.price) + ' zahlen',
       stud: 'Deckhengst übernehmen',
+      costud: 'Co-Zucht-Hengst übernehmen',
       payout: 'Decktaxe annehmen (' + fmt(p.amount) + ')',
       confirm: 'Abrechnung abschließen',
       reissue: 'Quittung erneut erzeugen',
@@ -1833,6 +1847,7 @@ const UI = (function () {
     else if (act === 'sell') r = Game.acceptBid(tradeRaw);
     else if (act === 'receive') r = Game.acceptDelivery(tradeRaw);
     else if (act === 'stud') r = Game.acceptStud(tradeRaw);
+    else if (act === 'costud') r = Game.acceptCoStud(tradeRaw);
     else if (act === 'payout') r = Game.acceptPayout(tradeRaw);
     else if (act === 'confirm') r = Game.confirmPayout(tradeRaw);
     else if (act === 'reissue') r = Game.reissueReceipt(tradeRaw);

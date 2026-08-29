@@ -21,6 +21,9 @@
                             Empfänger tritt mit einem eigenen Pferd an; beide
                             werden mit demselben Seed bewertet (gleiche Tagesform).
    CR  CHALLENGE-ERGEBNIS  Rückmeldung: das Gegnerpferd + beide Wertungen.
+   CZ  CO-ZUCHT            Wie SD (Deckhengst), aber ohne Deckgeld: der Besitzer
+                            bekommt beim Verkauf der Nachzucht einen prozentualen
+                            Anteil (abgerechnet über PY/CF wie die Decktaxe).
 
    Jeder Code ist Text (UTF-8 -> Base64url mit kurzer Prüfsumme) und wird
    vom Spieler selbst weitergegeben – geräteübergreifend.
@@ -100,6 +103,9 @@ const Friend = (function () {
   function encodeStud(h, fee, fromCode, week) {
     return pack('SD', { v: 2, from: fromCode, fee: Math.max(0, Math.round(fee)), horse: packHorse(h, week) });
   }
+  function encodeCoStud(h, sharePct, fromCode, week) {
+    return pack('CZ', { v: 2, from: fromCode, share: Math.max(1, Math.min(80, Math.round(sharePct || 40))), horse: packHorse(h, week) });
+  }
   // Decktaxe-Abrechnung: der Nutzer des Freundes-Hengstes zahlt die
   // gesammelten Deckgebühren an den Besitzer aus.
   function encodePayout(ownerCode, payerCode, amount, count, studName, payId) {
@@ -129,12 +135,12 @@ const Friend = (function () {
       horse: packHorse(h, week) });
   }
 
-  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung', CF: 'Quittung', RK: 'Saison-Rangliste', CG: 'Turnier-Challenge', CR: 'Challenge-Ergebnis' };
+  const TYPE_LABEL = { OF: 'Verkaufsangebot', BD: 'Kaufgebot', DL: 'Lieferung', SD: 'Deckhengst-Angebot', PY: 'Decktaxe-Abrechnung', CF: 'Quittung', RK: 'Saison-Rangliste', CG: 'Turnier-Challenge', CR: 'Challenge-Ergebnis', CZ: 'Co-Zucht-Angebot' };
 
   // --- Decoder: prüft Form + Prüfsumme, wirft bei Murks ---------------
   function decode(str) {
     const s = (str || '').trim().replace(/\s+/g, '');
-    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY|CF|RK|CG|CR)\.([a-z0-9]{1,8})\.(.+)$/i);
+    const m = s.match(/^HRV2\.(OF|BD|DL|SD|PY|CF|RK|CG|CR|CZ)\.([a-z0-9]{1,8})\.(.+)$/i);
     if (!m) throw new Error('Das ist kein gültiger Tauschcode.');
     const type = m[1].toUpperCase();
     if (sig(m[3]) !== m[2]) throw new Error('Der Code ist unvollständig oder beschädigt.');
@@ -147,8 +153,8 @@ const Friend = (function () {
       stud: p.stud || '', horse: p.horse || null,
       points: p.points || 0, prestige: p.prestige || 0, year: p.year || 1, week: p.week || 0,
       disc: p.disc || null, level: p.level || 1, seed: p.seed || 0,
-      myScore: p.myScore || 0, oppScore: p.oppScore || 0 };
-    if ((type === 'OF' || type === 'DL' || type === 'SD' || type === 'CG' || type === 'CR') && (!out.horse || !out.horse.genotype)) {
+      myScore: p.myScore || 0, oppScore: p.oppScore || 0, share: p.share || 0 };
+    if ((type === 'OF' || type === 'DL' || type === 'SD' || type === 'CG' || type === 'CR' || type === 'CZ') && (!out.horse || !out.horse.genotype)) {
       throw new Error('Im Code fehlen Pferdedaten.');
     }
     return out;
@@ -161,6 +167,7 @@ const Friend = (function () {
     encodeBid: encodeBid,
     encodeDelivery: encodeDelivery,
     encodeStud: encodeStud,
+    encodeCoStud: encodeCoStud,
     encodePayout: encodePayout,
     encodeConfirm: encodeConfirm,
     encodeRanking: encodeRanking,

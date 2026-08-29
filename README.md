@@ -107,6 +107,9 @@ auf dem Startbildschirm alle Regeln.
   - **Turnier-Challenge** (Stall, beim Pferd) – Pferd + Disziplin + Klasse +
     Seed als Code; der Freund tritt mit einem eigenen Pferd an, beide werden
     mit demselben Seed bewertet. Ergebnis-Code zeigt beide Wertungen.
+  - **Co-Zucht** – Deckhengst ohne Deckgeld gegen festen Prozentanteil
+    (1–80 %) am Verkaufserlös jeder Nachzucht; Anteil wird beim Verkauf
+    abgezogen und per Abrechnungs-Code/Quittung ausgezahlt.
   - **Deckhengst** – öffentlicher, **mehrfach nutzbarer** Code; der Hengst landet
     dauerhaft in der Deckstation des Freundes, deiner bleibt bei dir. Jede
     Bedeckung sammelt Decktaxe beim Nutzer; er schickt dir per **Abrechnungscode**
