@@ -58,16 +58,16 @@ const Game = (function () {
       saleListings: [],   // { horseId, price, weeks }
       showResults: [],    // letzte Turnier-Ergebnislisten
       eventLog: [],
-      nextMarketWeek: 0,
-      nextShowWeek: 0,
-      nextStudWeek: 0,
+      nextMarketWeek: 2,
+      nextShowWeek: 3,
+      nextStudWeek: 6,
       nextFarrierWeek: Economy.FARRIER_EVERY,
       nextVetRoutineWeek: Economy.VETROUTINE_EVERY,
       debt: 0,
       history: [],
       staff: [],
       staffMarket: [],
-      nextStaffWeek: 0,
+      nextStaffWeek: 8,
       sponsors: [],
       sponsorOffers: [],
       nextSponsorWeek: 8,
@@ -111,6 +111,15 @@ const Game = (function () {
   // Nachfrage, ...), damit nichts abstürzt.
   function migrate() {
     if (!state) return;
+    if (!state.facilities || typeof state.facilities !== 'object') state.facilities = { stalls: 0, arena: 0, vet: 0, marketing: 0 };
+    if (!Array.isArray(state.horses)) state.horses = [];
+    if (!state.auction || typeof state.auction !== 'object') state.auction = { lots: [], nextWeek: state.week + 2 };
+    if (!Array.isArray(state.shows)) state.shows = [];
+    if (!Array.isArray(state.saleListings)) state.saleListings = [];
+    if (!Array.isArray(state.eventLog)) state.eventLog = [];
+    if (typeof state.week !== 'number') state.week = 0;
+    if (typeof state.cash !== 'number') state.cash = 0;
+    if (typeof state.prestige !== 'number') state.prestige = 0;
     if (!state.demand) state.demand = Economy.initDemand();
     if (!state.showResults) state.showResults = [];
     if (!Array.isArray(state.rivals) || !state.rivals.length) state.rivals = Economy.initRivals(state);
@@ -1660,7 +1669,9 @@ const Game = (function () {
     if (Math.random() > 0.35) return;
     const care = Economy.careDef(state);
     const roll = Math.random();
-    const horses = state.horses.filter((h) => !h.pregnancy);
+    // Kaufinteressent nur für Pferde, die nicht schon anderweitig „verplant" sind.
+    const horses = state.horses.filter((h) => !h.pregnancy && !h.offered && !h.forSale &&
+      !state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id));
     // Krankheits-/Verletzungsrisiko: durch gute Pflege gesenkt, durch
     // schlechte erhöht (care.eventMult).
     if (roll < 0.3 * care.eventMult * Economy.staffEventMult(state) && state.horses.length) {
