@@ -111,15 +111,21 @@ const Game = (function () {
   // Nachfrage, ...), damit nichts abstürzt.
   function migrate() {
     if (!state) return;
-    if (!state.facilities || typeof state.facilities !== 'object') state.facilities = { stalls: 0, arena: 0, vet: 0, marketing: 0 };
-    if (!Array.isArray(state.horses)) state.horses = [];
-    if (!state.auction || typeof state.auction !== 'object') state.auction = { lots: [], nextWeek: state.week + 2 };
-    if (!Array.isArray(state.shows)) state.shows = [];
-    if (!Array.isArray(state.saleListings)) state.saleListings = [];
-    if (!Array.isArray(state.eventLog)) state.eventLog = [];
     if (typeof state.week !== 'number') state.week = 0;
     if (typeof state.cash !== 'number') state.cash = 0;
     if (typeof state.prestige !== 'number') state.prestige = 0;
+    if (!state.facilities || typeof state.facilities !== 'object') state.facilities = { stalls: 0, arena: 0, vet: 0, marketing: 0 };
+    if (!Array.isArray(state.horses)) state.horses = [];
+    if (!state.auction || typeof state.auction !== 'object' || !Array.isArray(state.auction.lots)) state.auction = { lots: [], nextWeek: state.week + 2 };
+    if (!Array.isArray(state.shows)) state.shows = [];
+    if (!Array.isArray(state.saleListings)) state.saleListings = [];
+    if (!Array.isArray(state.eventLog)) state.eventLog = [];
+    if (!Array.isArray(state.market)) state.market = [];
+    if (!Array.isArray(state.studRoster)) state.studRoster = [];
+    if (state.nextMarketWeek == null) state.nextMarketWeek = state.week;
+    if (state.nextShowWeek == null) state.nextShowWeek = state.week;
+    if (state.nextStudWeek == null) state.nextStudWeek = state.week;
+    if (!state.studName) state.studName = Names.randStudName();
     if (!state.demand) state.demand = Economy.initDemand();
     if (!state.showResults) state.showResults = [];
     if (!Array.isArray(state.rivals) || !state.rivals.length) state.rivals = Economy.initRivals(state);
@@ -142,9 +148,11 @@ const Game = (function () {
     if (state.prefixOn == null) state.prefixOn = true;
     if (state.boarding == null) state.boarding = 0;
     if (state.lastSeasonIdx == null) state.lastSeasonIdx = Economy.season(state.week).idx;
-    if (!state.stats) state.stats = {};
+    if (!state.stats || typeof state.stats !== 'object') state.stats = {};
+    ['foalsBred', 'horsesSold', 'showWins', 'totalEarnings', 'biggestWin', 'insuranceClaims'].forEach((k) => {
+      if (typeof state.stats[k] !== 'number' || !isFinite(state.stats[k])) state.stats[k] = 0;
+    });
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
-    if (state.stats.biggestWin === undefined) state.stats.biggestWin = 0;
     if (!state.friendCode) state.friendCode = Friend.playerCode();
     if (!Array.isArray(state.friends)) state.friends = [];
     if (!Array.isArray(state.friendRankings)) state.friendRankings = [];
