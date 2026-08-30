@@ -1378,6 +1378,7 @@ const Game = (function () {
         const v = Math.round(Model.valuation(foal, state.week, Economy.prestigeMult(state)) * 0.7);
         state.cash += v;
         log('Geburt: "' + foal.name + '" - kein Stallplatz frei, Fohlen direkt für ' + Economy.fmtEur(v) + ' verkauft.', 'info');
+        payCoBreedShare(foal, v);   // Co-Zucht-Anteil auch bei Notverkauf des Fohlens
       }
     });
 
