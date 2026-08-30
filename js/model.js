@@ -85,7 +85,9 @@ const Model = (function () {
 
   function isMixBreed(breed) { return typeof breed === 'string' && breed.indexOf('Mix') === 0; }
   function breedDef(breed) {
-    return Names.BREEDS[breed] || { conf: 66, value: isMixBreed(breed) ? 0.55 : 1, aff: {} };
+    // value: 1 auch für Mixe — der Mix-Malus steckt in valuation() (× 0.5),
+    // sonst würde er hier ein zweites Mal greifen.
+    return Names.BREEDS[breed] || { conf: 66, value: 1, aff: {} };
   }
 
   // Einzelnoten lesen - auch für alte Spielstände ohne Detailwerte (dann
