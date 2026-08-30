@@ -432,9 +432,20 @@ const Economy = (function () {
       if (lot.closed) return;
       lot.closed = true;
       if (lot.consignedByPlayer) {
-        // Spielerpferd: KI kauft es zum aktuellen Gebot, sofern >= Reserve.
-        const sold = lot.currentBid >= (lot.reserve || 0);
-        results.push({ lot: lot, type: 'consign', sold: sold, amount: sold ? lot.currentBid : 0 });
+        // Spielerpferd: die KI bietet bis zu ihrem verdeckten Maximum (aiMax).
+        // Verkauft, wenn dieses Maximum das Limit (Reserve) erreicht; der
+        // Zuschlagspreis liegt zwischen Limit/Startgebot und aiMax
+        // (simulierte Bietkonkurrenz).
+        const reserve = lot.reserve || 0;
+        const floor = Math.max(reserve, lot.startBid || 0);
+        const sold = (lot.aiMax || 0) >= floor;
+        let amount = 0;
+        if (sold) {
+          amount = Math.round((floor + Math.max(0, (lot.aiMax || 0) - floor) * (0.3 + Math.random() * 0.5)) / 50) * 50;
+          amount = Math.max(amount, Math.round(floor / 50) * 50);
+        }
+        lot.currentBid = sold ? amount : lot.currentBid;
+        results.push({ lot: lot, type: 'consign', sold: sold, amount: amount });
       } else if (lot.leader === 'player') {
         results.push({ lot: lot, type: 'buy', sold: true, amount: lot.currentBid });
       } else {

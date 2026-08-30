@@ -80,6 +80,12 @@ const Friend = (function () {
       conformation: h.conformation, temperament: h.temperament, health: h.health,
       quality: h.quality, wins: h.wins || 0, earnings: h.earnings || 0,
       genoTested: h.genoTested !== false,
+      // Zuchtstatus mitgeben, damit ein gekörter Freundes-Hengst gekört bleibt
+      // (sonst bekämen alle Fohlen mit ihm „keine Papiere").
+      zuchtzulassung: h.zuchtzulassung || null, praemie: h.praemie || null,
+      titel: h.titel || null, leistungspruefung: h.leistungspruefung || null,
+      noPapers: !!h.noPapers,
+      foalsBred: h.foalsBred || 0, foalQualSum: h.foalQualSum || 0,
       turnierPunkte: h.turnierPunkte || {},
       sireName: h.sireName || null, damName: h.damName || null,
       ancestors: h.ancestors || {},

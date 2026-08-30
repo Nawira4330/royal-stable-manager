@@ -511,6 +511,7 @@ const Game = (function () {
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
     if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
     if (h.pregnancy) return { ok: false, msg: 'Trächtige Stute - erst nach der Geburt verkaufen (oder in die Auktion geben).' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
     if (state.saleListings.some((s) => s.horseId === horseId)) return { ok: false, msg: 'Steht bereits zum Verkauf.' };
     state.saleListings.push({ horseId: horseId, price: Math.max(100, Math.round(price)), weeks: 0 });
     h.forSale = { price: Math.round(price) };
@@ -546,6 +547,7 @@ const Game = (function () {
     const h = getHorse(horseId);
     if (!h) return { ok: false };
     if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
     const dm = clamp(Economy.demandMultiplier(state, h), 0.85, 1.12);
     const v = Math.round(valuation(h) * 0.5 * dm);
     payCoBreedShare(h, v);
@@ -1133,19 +1135,23 @@ const Game = (function () {
     const h = getHorse(horseId);
     if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
     if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
+    if (h.forSale) return { ok: false, msg: h.name + ' steht am Markt zum Verkauf — erst zurückziehen.' };
     if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: 'Bereits in der Auktion.' };
     const est = valuation(h);
+    const dm = clamp(Economy.demandMultiplier(state, h), 0.7, 1.35);
+    const reserveV = Math.max(0, Math.round(reserve || est * 0.65));
     state.auction.lots.push({
       horse: h, estimate: est,
       startBid: Math.round(est * 0.4 / 50) * 50,
       currentBid: Math.round(est * 0.4 / 50) * 50,
       leader: null,
-      reserve: Math.max(0, Math.round(reserve || est * 0.6)),
-      aiMax: Math.round(est * (0.75 + Math.random() * 0.6) / 50) * 50,
+      reserve: reserveV,
+      // verdecktes KI-Maximum: um den Schätzwert, mit der Segment-Nachfrage skaliert.
+      aiMax: Math.round(est * dm * (0.62 + Math.random() * 0.7) / 50) * 50,
       closed: false,
       consignedByPlayer: true,
     });
-    log(h.name + ' in die nächste Auktion eingeliefert (Limit ' + Economy.fmtEur(reserve || est * 0.6) + ').', 'info');
+    log(h.name + ' in die nächste Auktion eingeliefert (Limit ' + Economy.fmtEur(reserveV) + ').', 'info');
     save(); emit();
     return { ok: true };
   }
@@ -1157,6 +1163,8 @@ const Game = (function () {
     if (!show || !h) return { ok: false, msg: 'Schau oder Pferd nicht gefunden.' };
     if (show.done) return { ok: false, msg: 'Schau ist vorbei.' };
     if (show.entered.indexOf(horseId) !== -1) return { ok: false, msg: 'Schon genannt.' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === horseId)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
     const reason = Economy.eligibilityReason(h, show, state.week);
     if (reason) return { ok: false, msg: reason };
     if (state.cash < show.entryFee) return { ok: false, msg: 'Nenngeld nicht bezahlbar.' };
@@ -1190,6 +1198,7 @@ const Game = (function () {
     if (y > 9) return { ok: false, msg: 'Leistungsprüfungen legt man mit 3–9 Jahren ab.' };
     if (h.pregnancy) return { ok: false, msg: 'Trächtige Stuten nicht zur Prüfung.' };
     if (h.offered) return { ok: false, msg: h.name + ' ist in einem Verkaufsangebot.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
     if (h.energy < 40) return { ok: false, msg: h.name + ' ist zu erschöpft (Energie < 40).' };
     if (state.cash < LP_COST) return { ok: false, msg: 'Prüfungsgebühr ' + Economy.fmtEur(LP_COST) + ' nicht bezahlbar.' };
     state.cash -= LP_COST;
@@ -1377,7 +1386,7 @@ const Game = (function () {
       } else {
         const v = Math.round(Model.valuation(foal, state.week, Economy.prestigeMult(state)) * 0.7);
         state.cash += v;
-        log('Geburt: "' + foal.name + '" - kein Stallplatz frei, Fohlen direkt für ' + Economy.fmtEur(v) + ' verkauft.', 'info');
+        log('⚠️ Geburt: "' + foal.name + '" — kein Stallplatz frei, Fohlen musste direkt für ' + Economy.fmtEur(v) + ' (70 % Wert) verkauft werden.', 'warn');
         payCoBreedShare(foal, v);   // Co-Zucht-Anteil auch bei Notverkauf des Fohlens
       }
     });
@@ -1450,7 +1459,7 @@ const Game = (function () {
             log('Auktion: Zuschlag für ' + h.name + ' verfällt (kein Platz oder kein Geld).', 'warn');
           }
         } else if (res.type === 'consign') {
-          if (res.sold) {
+          if (res.sold && state.horses.some((x) => x.id === h.id)) {
             state.cash += res.amount;
             state.stats.horsesSold += 1;
             state.stats.totalEarnings += res.amount;
@@ -1722,6 +1731,25 @@ const Game = (function () {
       Model.ageYears(h, state.week) >= Model.MATURITY_YEARS && Model.ageYears(h, state.week) <= Model.MAX_BREED_AGE);
     if (openMares.length) t.push({ icon: '🧬', tab: 'zucht', kind: 'info',
       text: openMares.length + ' deckbereite Stute' + (openMares.length > 1 ? 'n sind' : ' ist') + ' nicht tragend' });
+
+    // Rechtzeitig vor der Geburt warnen, wenn kein Stallplatz fürs Fohlen frei ist
+    // (sonst wird das Fohlen direkt zum 70-%-Preis verkauft).
+    const preg = state.horses.filter((h) => h.pregnancy)
+      .sort((a, b) => a.pregnancy.weeksLeft - b.pregnancy.weeksLeft);
+    if (preg.length) {
+      const free = Math.max(0, Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0));
+      const dueSoon = preg.filter((h) => h.pregnancy.weeksLeft <= 8).length;
+      const imminent = preg.filter((h) => h.pregnancy.weeksLeft <= 2).length;
+      if (imminent > free) {
+        t.push({ icon: '🍼', tab: 'gestüt', kind: 'warn',
+          text: imminent + ' Fohlen in ≤ 2 Wochen erwartet, aber nur ' + free + ' freie' + (free === 1 ? 'r Stallplatz' : ' Stallplätze') +
+            ' — sonst wird das Fohlen sofort zum 70-%-Preis verkauft. Platz schaffen (Stall ausbauen, Pferd verkaufen, Pensionsbox freigeben).' });
+      } else if (dueSoon > free) {
+        t.push({ icon: '🍼', tab: 'gestüt', kind: 'warn',
+          text: dueSoon + ' Fohlen in den nächsten Wochen, aber nur ' + free + ' freie' + (free === 1 ? 'r Stallplatz' : ' Stallplätze') +
+            ' — rechtzeitig Platz schaffen, sonst gehen Fohlen zum 70-%-Preis weg.' });
+      }
+    }
 
     let showsOpen = 0;
     state.shows.forEach((show) => {

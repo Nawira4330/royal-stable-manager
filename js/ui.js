@@ -1246,13 +1246,13 @@ const UI = (function () {
         <div class="row between"><span>Schätzwert</span><b>${fmt(lot.estimate)}</b></div>
         <div class="row between"><span>Aktuelles Gebot</span><b>${fmt(lot.currentBid)}</b> ${leadTxt}</div>
         ${lot.consignedByPlayer
-          ? '<div class="small muted">Limit (Reserve): ' + fmt(lot.reserve || 0) + '. Zuschlag beim nächsten Wochenwechsel.</div>'
+          ? '<div class="small muted">Limit (Reserve): ' + fmt(lot.reserve || 0) + '. Die Konkurrenz bietet bis zu ihrem verdeckten Maximum; liegt das über deinem Limit, wird verkauft — sonst kommt das Pferd zurück. Zuschlag beim nächsten Wochenwechsel.</div>'
           : '<div class="row"><input type="number" class="bid-input" id="bid-' + i + '" value="' + minNext + '" step="' + Economy.bidIncrement(lot.currentBid) + '">' +
             '<button class="small" data-action="bid" data-idx="' + i + '">Bieten</button></div>'}
       </div>`;
     }).join('');
 
-    const consignable = s.horses.filter((h) => !h.pregnancy && !h.offered && !s.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id));
+    const consignable = s.horses.filter((h) => !h.offered && !h.forSale && !s.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id));
     const consignSel = '<select id="consign-sel">' + ['<option value="">Pferd wählen…</option>']
       .concat(consignable.map((h) => '<option value="' + h.id + '">' + esc(h.name) + ' (Schätzwert ' + fmt(Game.valuation(h)) + ')</option>')).join('') + '</select>';
 

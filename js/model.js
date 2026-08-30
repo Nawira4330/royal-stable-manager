@@ -291,6 +291,10 @@ const Model = (function () {
       sireId: null, damId: null, sireName: p.sireName || null, damName: p.damName || null,
       ancestors: p.ancestors && Object.keys(p.ancestors).length ? p.ancestors : syntheticAncestors(),
       genoTested: p.genoTested !== false,
+      zuchtzulassung: p.zuchtzulassung || null, praemie: p.praemie || null,
+      titel: p.titel || null, leistungspruefung: p.leistungspruefung || null,
+      noPapers: !!p.noPapers, pendingTest: null,
+      foalsBred: p.foalsBred || 0, foalQualSum: p.foalQualSum || 0,
       bred: false, origin: origin || 'von Freund', acquiredWeek: currentWeek,
     };
     ensureTraits(h);
