@@ -664,9 +664,10 @@ const UI = (function () {
       [0, 1, 2, 3, 4, 5].map((i) =>
         '<select class="plan-slot" data-action="set-plan" data-id="' + h.id + '" data-slot="' + i + '"' + (adult ? '' : ' disabled') + '>' +
         slotOpts(plan[i] || '') + '</select>').join('') + '</div>';
-    const restSlots = 6 - plan.filter((d) => d).length;
+    const unitSlots = plan.filter((d) => d).length;
+    const restSlots = 6 - unitSlots;
     const planHint = plan.some((d) => d)
-      ? '<div class="small muted">' + plan.filter((d) => d).length + ' Einheiten, ' + restSlots + ' Ruhetage. Jede Einheit kostet ~12 Energie, Ruhetage geben +5 zurück. Zu wenig Energie → Einheiten fallen aus.</div>'
+      ? '<div class="small muted">' + unitSlots + (unitSlots === 1 ? ' Einheit, ' : ' Einheiten, ') + restSlots + (restSlots === 1 ? ' Ruhetag' : ' Ruhetage') + '. Jede Einheit kostet ~12 Energie, Ruhetage geben +5 zurück. Zu wenig Energie → Einheiten fallen aus.</div>'
       : '<div class="small muted">Kein Training geplant — das Pferd erholt sich nur.</div>';
 
     const pts = (h.turnierPunkte && Object.keys(h.turnierPunkte).length
@@ -1258,7 +1259,7 @@ const UI = (function () {
 
     return `
       <div class="card">
-        <h3>Auktion — Zuschlag in Woche ${s.auction.nextWeek} (in ${Math.max(0, s.auction.nextWeek - s.week)} Wochen)</h3>
+        <h3>Auktion — Zuschlag in Woche ${s.auction.nextWeek} ${(function () { const n = Math.max(0, s.auction.nextWeek - s.week); return n === 0 ? '(diese Woche)' : n === 1 ? '(in 1 Woche)' : '(in ' + n + ' Wochen)'; })()}</h3>
         <p class="small muted">Beim Bieten kontert die Konkurrenz sofort bis zu ihrem (verdeckten) Maximum.
         Führst du beim Zuschlag, geht das Pferd in deinen Stall (wenn Platz &amp; Geld reichen).</p>
         <div class="row" style="margin-top:.5rem">

@@ -1742,7 +1742,7 @@ const Game = (function () {
     const t = [];
     const adults = state.horses.filter((h) => Model.ageYears(h, state.week) >= Model.MATURITY_YEARS);
 
-    const noPlan = adults.filter((h) => !(h.trainingPlan || []).some((d) => d));
+    const noPlan = adults.filter((h) => !h.pregnancy && !h.offered && !(h.trainingPlan || []).some((d) => d));
     if (noPlan.length) t.push({ icon: '🏋️', tab: 'stall', kind: 'info',
       text: noPlan.length + ' Pferd' + (noPlan.length > 1 ? 'e' : '') + ' ohne Trainingsplan (' + noPlan.slice(0, 3).map((h) => h.name).join(', ') + (noPlan.length > 3 ? ' …' : '') + ')' });
 
@@ -1776,7 +1776,7 @@ const Game = (function () {
       if (adults.some((h) => !Economy.eligibilityReason(h, show, state.week))) showsOpen++;
     });
     if (showsOpen) t.push({ icon: '🏆', tab: 'schauen', kind: 'info',
-      text: showsOpen + ' Turnier' + (showsOpen > 1 ? 'e' : '') + ', bei dem du starten könntest, ohne Nennung' });
+      text: showsOpen + ' Turnier' + (showsOpen > 1 ? 'e' : '') + ', bei ' + (showsOpen > 1 ? 'denen' : 'dem') + ' du starten könntest, ohne Nennung' });
 
     const outbid = (state.auction.lots || []).filter((l) => !l.consignedByPlayer && l.leader === 'ai').length;
     if (outbid) t.push({ icon: '🔨', tab: 'auktion', kind: 'warn',
