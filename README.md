@@ -9,18 +9,43 @@ Eigenständiges Projekt. Der Spielstand liegt lokal auf dem Gerät
 
 ## Starten
 
-**Einfach:** Doppelklick auf **`Gestütsspiel starten.bat`**. Beim ersten Start
-wird Electron heruntergeladen (einmalig, einige Minuten, Internet nötig).
+Das Projekt hält **keine lokalen Abhängigkeiten** vor – kein `node_modules`,
+kein `package-lock.json` im Repo. Der Ordner (und die OneDrive-Sync) bleibt
+damit bei ~0,4 MB statt ~560 MB.
 
-**Über die Konsole:**
+**Als Browser-Variante** (braucht gar nichts): `serve.ps1` starten, dann
+`http://localhost:8080/` öffnen. Kein Node.js, kein Internet, kein Electron.
+
+**Als Desktop-App:** Doppelklick auf **`Gestütsspiel starten.bat`** – oder über
+die Konsole:
 
 ```bash
-npm install
-npm start
+npm start            # = node tools/get-electron.js --run
 ```
 
-**Als Browser-Variante** (ohne Electron) geht weiterhin `serve.ps1` +
-`http://localhost:8080/`.
+`tools/get-electron.js` stellt Electron bereit, **ohne** dass es dauerhaft im
+Projektordner liegen muss:
+
+- schon entpackt (`node_modules/electron/`) → sofort starten
+- ZIP im Electron-Cache (`%LOCALAPPDATA%\electron\Cache`, außerhalb OneDrive,
+  überlebt `npm run clean`) → in ~1 s von dort entpacken, **kein Download**
+- sonst → ZIP einmalig laden (~115 MB, Internet nötig), in den Cache legen,
+  entpacken
+
+Ein `npm install` ist **nicht** nötig – `tools/get-electron.js` provisioniert
+Electron direkt. (Das mitgelieferte `.npmrc` gibt einem manuellen `npm install`
+die Installations-Skripte von Electron frei, die neuere npm-Versionen sonst
+blockieren; verlassen sollte man sich darauf aber nicht.)
+
+### Aufräumen
+
+```bash
+npm run clean        # entfernt node_modules/, dist/, package-lock.json
+```
+
+Danach läuft die Browser-Variante unverändert; `npm start` holt Electron beim
+nächsten Aufruf in ~1 s aus dem Cache zurück (nur ohne Cache erneut aus dem
+Netz).
 
 ### Windows-Installer / portable EXE bauen
 
@@ -28,6 +53,9 @@ npm start
 npm run dist            # NSIS-Installer + portable EXE nach dist/
 npm run dist:portable   # nur portable EXE
 ```
+
+`electron-builder` wird dabei nur temporär über `npx` bezogen und braucht
+Internet.
 
 Im Spiel erklärt der Knopf **„❔ Anleitung"** (oben) bzw. **„How to Play"**
 auf dem Startbildschirm alle Regeln.
@@ -193,4 +221,7 @@ js/state.js          Spielzustand, Speichern/Laden, Wochen-Tick
 js/ui.js             Oberfläche (Tabs, Rendering, Events)
 js/main.js           Einstiegspunkt (Renderer)
 serve.ps1            optionaler statischer Webserver (Browser-Variante)
+tools/get-electron.js stellt Electron bereit (Cache-first, sonst Download)
+tools/clean.js       entfernt node_modules/, dist/, package-lock.json
+.npmrc               erlaubt Electron-Installations-Skripte (fuer npm install)
 ```

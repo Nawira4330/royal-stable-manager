@@ -3,3 +3,4 @@ Thumbs.db
 .claude/settings.local.json
 node_modules/
 dist/
+package-lock.json

@@ -1,16 +1,17 @@
 @echo off
-rem Startet die Desktop-App. Beim ersten Mal werden die Abhaengigkeiten
-rem (Electron) heruntergeladen - das dauert einige Minuten und braucht
-rem Internet. Danach startet die App sofort.
+rem Startet die Desktop-App. Electron liegt NICHT im Projektordner - es wird
+rem beim ersten Mal (oder nach "npm run clean") aus dem Electron-Cache unter
+rem %LOCALAPPDATA%\electron\Cache entpackt; fehlt es dort, wird es einmalig
+rem geladen (~115 MB, Internet noetig). Danach startet die App sofort.
+rem
+rem Ohne Node.js / ohne Internet: stattdessen serve.ps1 starten und
+rem   http://localhost:8080/  im Browser oeffnen (braucht gar nichts).
 cd /d "%~dp0"
-if not exist "node_modules\electron" (
-  echo Erstinstallation: lade Electron ... (einmalig, bitte warten^)
-  call npm install
-  if errorlevel 1 (
-    echo.
-    echo Installation fehlgeschlagen. Ist Node.js installiert? https://nodejs.org
-    pause
-    exit /b 1
-  )
+node tools\get-electron.js --run
+if errorlevel 1 (
+  echo.
+  echo Start fehlgeschlagen. Ist Node.js installiert? https://nodejs.org
+  echo Alternative ohne Electron: serve.ps1 starten, dann http://localhost:8080/
+  pause
+  exit /b 1
 )
-call npm start
