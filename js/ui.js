@@ -1777,6 +1777,12 @@ const UI = (function () {
     bindGlobal();
     bindStart();
     Game.onChange(() => render());
+    // Vorhandenen Spielstand direkt öffnen; die Startseite erscheint nur ohne
+    // Spielstand (oder wenn das Laden fehlschlägt).
+    if (Game.hasSave() && Game.load()) {
+      $('#start-overlay').hidden = true;
+      showTab('gestüt');
+    }
   }
 
   // --- Stammbaum-Grafik (rekursives Fächer-Layout).
