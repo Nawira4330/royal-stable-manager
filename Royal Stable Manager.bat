@@ -1,5 +1,6 @@
 @echo off
-rem Startet die Desktop-App. Electron liegt NICHT im Projektordner - es wird
+rem Startet Royal Stable Manager als Desktop-App. Electron liegt NICHT im
+rem Projektordner - es wird
 rem beim ersten Mal (oder nach "npm run clean") aus dem Electron-Cache unter
 rem %LOCALAPPDATA%\electron\Cache entpackt; fehlt es dort, wird es einmalig
 rem geladen (~115 MB, Internet noetig). Danach startet die App sofort.

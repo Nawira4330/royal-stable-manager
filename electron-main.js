@@ -15,7 +15,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 640,
     backgroundColor: '#14232c',
-    title: 'Gestütsspiel',
+    title: 'Royal Stable Manager',
     autoHideMenuBar: true,          // Menüleiste ausblenden (Alt zeigt sie)
     webPreferences: {
       contextIsolation: true,

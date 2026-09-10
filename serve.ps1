@@ -1,4 +1,4 @@
-# Winziger statischer Webserver fuer das Gestuetsspiel.
+# Winziger statischer Webserver fuer Royal Stable Manager.
 # Start:  powershell -NoProfile -ExecutionPolicy Bypass -File serve.ps1
 # Dann im Browser:  http://localhost:8080/
 param([int]$Port = $(if ($env:PORT) { [int]$env:PORT } else { 8080 }))
@@ -7,7 +7,7 @@ $root = $PSScriptRoot
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
-Write-Host "Gestuetsspiel laeuft auf http://localhost:$Port/  (Strg+C zum Beenden)"
+Write-Host "Royal Stable Manager laeuft auf http://localhost:$Port/  (Strg+C zum Beenden)"
 
 $mime = @{
   '.html' = 'text/html; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8';

@@ -1,5 +1,5 @@
 /* ============================================================================
-   Farbgenetik-Motor für das Gestütsspiel.
+   Farbgenetik-Motor für Royal Stable Manager.
 
    Diploid: jeder Genort (Locus) hat zwei Allele. Vererbung ist strikt
    Mendelsch - jedes Elternteil gibt pro Locus zufällig eines seiner beiden

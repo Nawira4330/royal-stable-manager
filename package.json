@@ -1,8 +1,8 @@
 {
   "name": "gestuetsspiel",
-  "productName": "Gestütsspiel",
+  "productName": "Royal Stable Manager",
   "version": "0.2.0",
-  "description": "Pferdegestüt-Aufbauspiel mit echter Farbgenetik, Zucht, Training, Schauen und Auktionen. Läuft als Desktop-App (Electron).",
+  "description": "Pferdegestüt-Aufbauspiel mit echter Farbgenetik, Zucht, Training, Schauen und Auktionen. Läuft im Browser oder als Desktop-App (Electron).",
   "main": "electron-main.js",
   "author": "Nawira13",
   "license": "MIT",
@@ -16,16 +16,16 @@
   },
   "build": {
     "appId": "de.nawira13.gestuetsspiel",
-    "productName": "Gestütsspiel",
+    "productName": "Royal Stable Manager",
     "files": ["index.html", "electron-main.js", "css/**", "js/**"],
     "win": {
       "target": ["nsis", "portable"],
-      "artifactName": "Gestuetsspiel-${version}-${arch}.${ext}"
+      "artifactName": "RoyalStableManager-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Gestütsspiel"
+      "shortcutName": "Royal Stable Manager"
     }
   }
 }

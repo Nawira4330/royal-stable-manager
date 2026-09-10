@@ -1,4 +1,4 @@
-/* Eigenständiges Stylesheet für das Gestütsspiel. Farbwelt an das
+/* Eigenständiges Stylesheet für Royal Stable Manager. Farbwelt an das
    Schwesterprojekt angelehnt (dunkles Navy + Teal-Akzent), aber ohne
    Abhängigkeit von dessen style.css. Hell/Dunkel über prefers-color-scheme. */
 @import url('https://fonts.googleapis.com/css2?family=Courgette&family=Source+Sans+3:wght@400;600;700&display=swap');

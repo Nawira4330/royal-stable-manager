@@ -1,11 +1,12 @@
-# Gestütsspiel
+# Royal Stable Manager
 
-Ein Pferdegestüt-Aufbauspiel als **Desktop-App** (Electron). Baue ein Gestüt
-auf, kaufe und verkaufe Pferde, züchte mit echter Farbgenetik, trainiere für
+Ein Pferdegestüt-Aufbauspiel (deutsche Oberfläche). Läuft **im Browser**
+(auch am Handy) oder als **Desktop-App** (Electron). Baue ein Gestüt auf,
+kaufe und verkaufe Pferde, züchte mit echter Farbgenetik, trainiere für
 sechs Disziplinen und starte bei Zuchtschauen, Turnieren und Auktionen.
 
 Eigenständiges Projekt. Der Spielstand liegt lokal auf dem Gerät
-(`localStorage` des App-Fensters).
+(`localStorage`).
 
 ## Starten
 
@@ -16,7 +17,7 @@ damit bei ~0,4 MB statt ~560 MB.
 **Als Browser-Variante** (braucht gar nichts): `serve.ps1` starten, dann
 `http://localhost:8080/` öffnen. Kein Node.js, kein Internet, kein Electron.
 
-**Als Desktop-App:** Doppelklick auf **`Gestütsspiel starten.bat`** – oder über
+**Als Desktop-App:** Doppelklick auf **`Royal Stable Manager.bat`** – oder über
 die Konsole:
 
 ```bash
