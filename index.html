@@ -392,6 +392,9 @@
           <li>Reservekasse halten — der Wochenunterhalt läuft immer weiter.</li>
           <li>Junge Talente erst ausbilden, dann verkaufen: ausgebildete Pferde sind deutlich mehr wert.</li>
           <li>Bei knapper Kasse Futter/Pflege kurz herunterstufen — aber nicht dauerhaft.</li>
+          <li>Der Spielstand liegt nur im Browser-Speicher dieses Geräts. Ab und zu
+            <b>Menü → „Spielstand als Text sichern" → kopieren</b> und den Text irgendwo
+            aufheben; über „wiederherstellen" im selben Menü lässt er sich zurückholen.</li>
         </ul>
       </div>
     </div>
@@ -401,8 +404,14 @@
   <div class="overlay" id="menu-overlay" hidden>
     <div class="box stack">
       <h2>Menü</h2>
-      <button class="secondary" id="btn-export">Spielstand als Text exportieren</button>
-      <textarea id="export-text" rows="6" style="width:100%" hidden></textarea>
+      <button class="secondary" id="btn-export">Spielstand als Text sichern</button>
+      <textarea id="export-text" rows="5" style="width:100%" hidden readonly></textarea>
+      <button class="secondary small" id="btn-export-copy" style="margin-top:.3rem" hidden>In die Zwischenablage kopieren</button>
+      <details>
+        <summary class="muted small">Spielstand aus Text wiederherstellen</summary>
+        <textarea id="menu-import-text" rows="4" style="width:100%;margin-top:.4rem" placeholder="gesicherten Text hier einfügen"></textarea>
+        <button class="secondary small" id="btn-menu-import" style="margin-top:.4rem">Wiederherstellen</button>
+      </details>
       <button class="danger" id="btn-wipe">Spielstand löschen &amp; neu starten</button>
       <button class="secondary" id="btn-menu-close">Schließen</button>
     </div>

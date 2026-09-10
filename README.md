@@ -80,12 +80,24 @@ GitHub Pages, Netlify, Cloudflare Pages; `.nojekyll` liegt bei. Dann nur die
 URL am Handy öffnen und installieren.*)*
 
 Icons neu erzeugen: `npm run icons`. Bei einer neuen Version in `sw.js`
-`CACHE` hochzählen (`rsm-v1` → `rsm-v2`), damit die App die neuen Dateien
-lädt (Bundle neu bauen und wieder rüberkopieren).
+`CACHE` hochzählen (`rsm-v2` → `rsm-v3` …), damit die App die neuen Dateien
+lädt. Update über Hosting: `git push` → Pages baut neu; im installierten
+App-Icon nach dem Öffnen ein-, zweimal schließen/neu öffnen, bis der
+Service Worker die neue Version aktiviert hat.
 
-**Der Spielstand liegt pro Browser/Herkunft lokal** (`localStorage`) und wird
-*nicht* zwischen Geräten synchronisiert. Übertragen: Menü → „Spielstand als
-Text exportieren", Text ans andere Gerät, dort „Spielstand importieren".
+**Spielstand & Persistenz**
+
+- Liegt im `localStorage` der **Herkunft** (`schema://host:port`) – nur stabil,
+  wenn die App immer unter *derselben* Adresse geöffnet wird. Lokaler Server:
+  immer denselben Port und `localhost` (nicht mal `127.0.0.1`, mal LAN-IP).
+  HTTPS-Hosting (feste URL) ist hier klar robuster.
+- Die App fordert `navigator.storage.persist()` an, damit der Browser den
+  Speicher nicht bei Speicherdruck/App-Schließen verwirft. Zusätzlich hilft:
+  in Chrome die Einstellung *„Cookies löschen, wenn alle Fenster geschlossen
+  werden"* aus, und für Chrome die Akku-Optimierung des Systems deaktivieren.
+- **Sicherung/Übertragung:** Menü → „Spielstand als Text sichern" → kopieren;
+  über „wiederherstellen" im selben Menü (oder „importieren" auf dem
+  Startbildschirm) zurückspielen – auch geräteübergreifend.
 
 ### Windows-Installer / portable EXE bauen
 

@@ -1358,6 +1358,25 @@ const UI = (function () {
     });
     $('#btn-export').addEventListener('click', () => {
       const t = $('#export-text'); t.hidden = false; t.value = Game.exportSave(); t.select();
+      $('#btn-export-copy').hidden = false;
+    });
+    $('#btn-export-copy').addEventListener('click', () => {
+      const t = $('#export-text'); t.select();
+      try { navigator.clipboard.writeText(t.value); toast('Kopiert — sicher aufbewahren.'); }
+      catch (e) { try { document.execCommand('copy'); toast('Kopiert — sicher aufbewahren.'); }
+        catch (e2) { toast('Bitte den Text manuell markieren und kopieren.', true); } }
+    });
+    $('#btn-menu-import').addEventListener('click', () => {
+      const txt = $('#menu-import-text').value.trim();
+      if (!txt) { toast('Kein Text eingefügt.', true); return; }
+      if (!confirm('Aktuellen Spielstand durch den eingefügten ersetzen?')) return;
+      try {
+        Game.importSave(txt);
+        $('#menu-overlay').hidden = true;
+        $('#menu-import-text').value = '';
+        showTab('gestüt');
+        toast('Spielstand wiederhergestellt.');
+      } catch (err) { toast('Wiederherstellen fehlgeschlagen: ' + err.message, true); }
     });
     $('#btn-wipe').addEventListener('click', () => {
       if (confirm('Spielstand wirklich unwiderruflich löschen?')) { Game.wipe(); location.reload(); }

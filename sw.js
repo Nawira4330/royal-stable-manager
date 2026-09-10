@@ -5,7 +5,7 @@
 
    Bei einer neuen Version CACHE hochzaehlen -> alter Cache wird verworfen. */
 'use strict';
-const CACHE = 'rsm-v2';
+const CACHE = 'rsm-v3';
 const ASSETS = [
   './',
   './index.html',
