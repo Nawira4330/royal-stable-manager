@@ -13,6 +13,7 @@
     "dist": "node tools/get-electron.js && npx --yes electron-builder@25.1.8 --win --x64",
     "dist:portable": "node tools/get-electron.js && npx --yes electron-builder@25.1.8 --win portable --x64",
     "icons": "node tools/make-icons.js",
+    "bundle": "node tools/bundle.js",
     "clean": "node tools/clean.js"
   },
   "build": {

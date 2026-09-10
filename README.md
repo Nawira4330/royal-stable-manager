@@ -48,30 +48,44 @@ Danach läuft die Browser-Variante unverändert; `npm start` holt Electron beim
 nächsten Aufruf in ~1 s aus dem Cache zurück (nur ohne Cache erneut aus dem
 Netz).
 
-### Als App aufs Handy (PWA)
+### Als App aufs Handy (PWA) – ohne Hosting, nur per Datei
 
 Das Spiel ist eine **installierbare, offlinefähige PWA** (`manifest.webmanifest`
-+ `sw.js`). Voraussetzung: Es muss **über HTTPS** erreichbar sein (Service
-Worker brauchen einen sicheren Kontext; `http://localhost` zählt auch, ein
-reines `http://<LAN-IP>` **nicht**).
++ `sw.js`). Ein Service Worker braucht einen **sicheren Kontext** – HTTPS
+**oder** `http://localhost`. Ein reines `http://<LAN-IP>` reicht **nicht**.
+Ohne Server ins Internet zu stellen geht es auf **Android** so:
 
-1. Den Ordnerinhalt auf einen statischen HTTPS-Host legen – z. B. **GitHub
-   Pages** (Repo mit diesem Inhalt anlegen, Pages auf Branch `main` / Root;
-   `.nojekyll` liegt bereits bei), oder Netlify / Cloudflare Pages
-   (Drag-and-drop des Ordners, kein Build nötig).
-2. Am Handy die URL im Browser öffnen → Menü → **„Zum Startbildschirm
-   hinzufügen"** (Android/Chrome bietet das automatisch an, iOS/Safari über
-   „Teilen").
-3. Das Icon startet das Spiel im Vollbild; nach dem ersten Laden läuft es
-   **komplett offline**.
+1. **Bundle bauen:** `npm run bundle` → `royal-stable-manager-web.zip`
+   (nur die Laufzeitdateien, ~160 KB).
+2. Die ZIP aufs Handy kopieren (USB, Messenger, OneDrive …) und in einen
+   Ordner **entpacken**.
+3. Auf dem Handy eine schlanke **lokale Webserver-App** installieren, die
+   einen Ordner unter `http://localhost:<Port>` ausliefert
+   (Play Store, Stichwort „http server local", z. B. *Simple HTTP Server*).
+   Als Wurzel den entpackten Ordner wählen, **Port fest 8080**, starten.
+4. In **Chrome** `http://localhost:8080/` öffnen → Menü **⋮** →
+   **„App installieren"** / „Zum Startbildschirm hinzufügen". Chrome legt
+   eine echte App mit eigenem Icon an.
+5. Ab jetzt startet das 🐴-Icon das Spiel im **Vollbild** und **komplett
+   offline** – die Webserver-App muss dafür nicht mehr laufen.
 
-Icons neu erzeugen: `npm run icons` (schreibt `icons/*.png`, `favicon.png`).
-Bei einer neuen Version in `sw.js` `CACHE` hochzählen (`rsm-v1` → `rsm-v2`),
-damit die App die neuen Dateien lädt.
+> **Immer denselben Port (8080) verwenden.** Spielstand und App-Cache hängen
+> an der Herkunft `http://localhost:8080`; bei anderem Port ist der
+> Spielstand „weg" (liegt dann unter der alten Herkunft).
 
-**Der Spielstand liegt pro Browser lokal** (`localStorage`) und wird *nicht*
-zwischen Geräten synchronisiert. Übertragen: Menü → „Spielstand als Text
-exportieren", Text ans andere Gerät, dort „Spielstand importieren".
+Weitergeben = die ZIP weitergeben; der Empfänger macht Schritt 2–5 einmalig.
+
+*(Alternativ mit Hosting:* Inhalt auf einen statischen HTTPS-Host legen –
+GitHub Pages, Netlify, Cloudflare Pages; `.nojekyll` liegt bei. Dann nur die
+URL am Handy öffnen und installieren.*)*
+
+Icons neu erzeugen: `npm run icons`. Bei einer neuen Version in `sw.js`
+`CACHE` hochzählen (`rsm-v1` → `rsm-v2`), damit die App die neuen Dateien
+lädt (Bundle neu bauen und wieder rüberkopieren).
+
+**Der Spielstand liegt pro Browser/Herkunft lokal** (`localStorage`) und wird
+*nicht* zwischen Geräten synchronisiert. Übertragen: Menü → „Spielstand als
+Text exportieren", Text ans andere Gerät, dort „Spielstand importieren".
 
 ### Windows-Installer / portable EXE bauen
 
@@ -249,7 +263,8 @@ js/main.js           Einstiegspunkt (Renderer)
 serve.ps1            optionaler statischer Webserver (Browser-Variante)
 tools/get-electron.js stellt Electron bereit (Cache-first, sonst Download)
 tools/make-icons.js  erzeugt die App-Icons (icons/*.png, favicon.png)
-tools/clean.js       entfernt node_modules/, dist/, package-lock.json
+tools/bundle.js      packt die Web-Laufzeit in royal-stable-manager-web.zip
+tools/clean.js       entfernt node_modules/, dist/, ZIP, package-lock.json
 manifest.webmanifest PWA-Manifest (installierbar aufs Handy)
 sw.js                Service Worker (App-Shell-Cache, Offline-Betrieb)
 js/pwa.js            registriert den Service Worker

@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const targets = ['node_modules', 'dist', 'package-lock.json'];
+const targets = ['node_modules', 'dist', 'package-lock.json', 'royal-stable-manager-web.zip'];
 let freed = 0;
 
 function sizeOf(p) {
