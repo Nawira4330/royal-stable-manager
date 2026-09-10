@@ -48,6 +48,31 @@ Danach läuft die Browser-Variante unverändert; `npm start` holt Electron beim
 nächsten Aufruf in ~1 s aus dem Cache zurück (nur ohne Cache erneut aus dem
 Netz).
 
+### Als App aufs Handy (PWA)
+
+Das Spiel ist eine **installierbare, offlinefähige PWA** (`manifest.webmanifest`
++ `sw.js`). Voraussetzung: Es muss **über HTTPS** erreichbar sein (Service
+Worker brauchen einen sicheren Kontext; `http://localhost` zählt auch, ein
+reines `http://<LAN-IP>` **nicht**).
+
+1. Den Ordnerinhalt auf einen statischen HTTPS-Host legen – z. B. **GitHub
+   Pages** (Repo mit diesem Inhalt anlegen, Pages auf Branch `main` / Root;
+   `.nojekyll` liegt bereits bei), oder Netlify / Cloudflare Pages
+   (Drag-and-drop des Ordners, kein Build nötig).
+2. Am Handy die URL im Browser öffnen → Menü → **„Zum Startbildschirm
+   hinzufügen"** (Android/Chrome bietet das automatisch an, iOS/Safari über
+   „Teilen").
+3. Das Icon startet das Spiel im Vollbild; nach dem ersten Laden läuft es
+   **komplett offline**.
+
+Icons neu erzeugen: `npm run icons` (schreibt `icons/*.png`, `favicon.png`).
+Bei einer neuen Version in `sw.js` `CACHE` hochzählen (`rsm-v1` → `rsm-v2`),
+damit die App die neuen Dateien lädt.
+
+**Der Spielstand liegt pro Browser lokal** (`localStorage`) und wird *nicht*
+zwischen Geräten synchronisiert. Übertragen: Menü → „Spielstand als Text
+exportieren", Text ans andere Gerät, dort „Spielstand importieren".
+
 ### Windows-Installer / portable EXE bauen
 
 ```bash
@@ -223,6 +248,10 @@ js/ui.js             Oberfläche (Tabs, Rendering, Events)
 js/main.js           Einstiegspunkt (Renderer)
 serve.ps1            optionaler statischer Webserver (Browser-Variante)
 tools/get-electron.js stellt Electron bereit (Cache-first, sonst Download)
+tools/make-icons.js  erzeugt die App-Icons (icons/*.png, favicon.png)
 tools/clean.js       entfernt node_modules/, dist/, package-lock.json
+manifest.webmanifest PWA-Manifest (installierbar aufs Handy)
+sw.js                Service Worker (App-Shell-Cache, Offline-Betrieb)
+js/pwa.js            registriert den Service Worker
 .npmrc               erlaubt Electron-Installations-Skripte (fuer npm install)
 ```
