@@ -1,0 +1,20 @@
+{
+  "name": "Royal Stable Manager",
+  "short_name": "Royal Stable",
+  "description": "Pferdegestüt-Aufbauspiel: Zucht mit echter Farbgenetik, Training, Schauen und Auktionen. Spielstand lokal auf dem Gerät.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "id": "royal-stable-manager",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14232c",
+  "theme_color": "#14232c",
+  "categories": ["games", "simulation"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

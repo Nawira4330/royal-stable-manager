@@ -12,12 +12,13 @@
     "electron": "node tools/get-electron.js",
     "dist": "node tools/get-electron.js && npx --yes electron-builder@25.1.8 --win --x64",
     "dist:portable": "node tools/get-electron.js && npx --yes electron-builder@25.1.8 --win portable --x64",
+    "icons": "node tools/make-icons.js",
     "clean": "node tools/clean.js"
   },
   "build": {
     "appId": "de.nawira13.gestuetsspiel",
     "productName": "Royal Stable Manager",
-    "files": ["index.html", "electron-main.js", "css/**", "js/**"],
+    "files": ["index.html", "electron-main.js", "css/**", "js/**", "manifest.webmanifest", "sw.js", "favicon.png", "icons/**"],
     "win": {
       "target": ["nsis", "portable"],
       "artifactName": "RoyalStableManager-${version}-${arch}.${ext}"
