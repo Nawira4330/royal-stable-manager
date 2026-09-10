@@ -171,7 +171,9 @@ const Model = (function () {
     const potential = {};
     DISC.forEach((d) => {
       const aff = (bdef.aff && bdef.aff[d]) || 1;
-      potential[d] = clamp(round((30 + quality * 55 + gauss(0, 9)) * aff), 5, 100);
+      // Schwerpunkt-Disziplinen (Startbildschirm): deutlich höheres Potenzial.
+      const focus = opts.focusDisc && opts.focusDisc.indexOf(d) !== -1 ? 1.3 : 1;
+      potential[d] = clamp(round((30 + quality * 55 + gauss(0, 9)) * aff * focus), 5, 100);
     });
 
     // Exterieur: Einzelnoten um ein qualitätsabhängiges Zentrum streuen.

@@ -102,6 +102,11 @@ auf dem Startbildschirm alle Regeln.
 
 ## Spielprinzip
 
+**Spielstart:** Auf dem Startbildschirm optional **Rasse** und **zwei
+Schwerpunkt-Disziplinen** wählen – die vier Startpferde (1 Hengst, 3 Stuten)
+sind dann alle dieser Rasse und im Schnitt deutlich stärker in den beiden
+Disziplinen begabt (konkrete Werte zufällig). Ohne Wahl: gemischte Rassen.
+
 - **🏡 Gestüt** – Kasse, Prestige/Rang, Anlagen ausbauen (Stallplätze,
   Trainingsanlage, Tierarzt/Reproduktion, Vermarktung, **Weide/Koppeln**,
   **Futter-Lager**), **Futter & Pflege**

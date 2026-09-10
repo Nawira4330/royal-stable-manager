@@ -1335,7 +1335,10 @@ const UI = (function () {
       setTimeout(() => { $('#btn-week').disabled = false; }, 120);
       if (currentTab === 'schauen' || currentTab === 'auktion') showTab(currentTab);
     });
-    $('#btn-save').addEventListener('click', () => { Game.save(); toast('Gespeichert.'); });
+    $('#btn-save').addEventListener('click', () => {
+      const ok = Game.save();
+      toast(ok ? 'Gespeichert.' : 'Speichern fehlgeschlagen — Browser-Speicher blockiert?', !ok);
+    });
     $('#btn-menu').addEventListener('click', () => { $('#menu-overlay').hidden = false; });
     $('#btn-menu-close').addEventListener('click', () => { $('#menu-overlay').hidden = true; });
     $('#btn-howto').addEventListener('click', () => { $('#howto-overlay').hidden = false; });
@@ -1710,8 +1713,31 @@ const UI = (function () {
   // --- Startbildschirm --------------------------------------------------
   function bindStart() {
     if (Game.hasSave()) $('#btn-continue').hidden = false;
+
+    // Rassen- und Disziplin-Auswahl aus den Datenquellen füllen.
+    const breedSel = $('#new-breed');
+    Names.BREED_KEYS.forEach((b) => {
+      const o = document.createElement('option'); o.value = b; o.textContent = b; breedSel.appendChild(o);
+    });
+    const d1 = $('#new-disc-1'), d2 = $('#new-disc-2');
+    DISC.forEach((d) => {
+      [d1, d2].forEach((sel) => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
+    });
+    // Dieselbe Disziplin nicht zweimal wählbar.
+    const syncDisc = () => {
+      Array.from(d1.options).forEach((o) => { o.disabled = !!o.value && o.value === d2.value; });
+      Array.from(d2.options).forEach((o) => { o.disabled = !!o.value && o.value === d1.value; });
+    };
+    d1.addEventListener('change', syncDisc);
+    d2.addEventListener('change', syncDisc);
+
     $('#btn-new').addEventListener('click', () => {
-      Game.newGame($('#new-stud-name').value.trim());
+      let disc = [d1.value, d2.value].filter(Boolean);
+      disc = disc.filter((d, i) => disc.indexOf(d) === i);
+      Game.newGame($('#new-stud-name').value.trim(), {
+        breed: breedSel.value || null,
+        disc: disc.length ? disc : null,
+      });
       $('#start-overlay').hidden = true;
       showTab('gestüt');
     });

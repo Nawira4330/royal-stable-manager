@@ -27,7 +27,8 @@ const Game = (function () {
   }
 
   // --- Neues Spiel.
-  function newGame(studName) {
+  function newGame(studName, opts) {
+    opts = opts || {};
     const sName = studName || Names.randStudName();
     state = {
       version: 4,
@@ -82,11 +83,20 @@ const Game = (function () {
       stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0, bestSale: null, biggestWin: 0 },
     };
 
-    // Startbestand: 1 Hengst, 3 Stuten, gemischte Rassen.
-    const startBreeds = ['Deutsches Sportpferd', 'Hannoveraner', 'Isländer', 'Araber'];
-    state.horses.push(Model.generateHorse({ sex: 'hengst', breed: startBreeds[0], quality: 0.55, ageYears: 6, currentWeek: 0, origin: 'Startbestand' }));
+    // Startbestand: 1 Hengst, 3 Stuten. Rasse & 2 Schwerpunkt-Disziplinen
+    // sind auf dem Startbildschirm wählbar; ohne Wahl gemischte Rassen.
+    const focusDisc = Array.isArray(opts.disc) && opts.disc.length ? opts.disc.slice(0, 2) : null;
+    const chosen = Names.BREEDS[opts.breed] ? opts.breed : null;
+    const startBreeds = chosen
+      ? [chosen, chosen, chosen, chosen]
+      : ['Deutsches Sportpferd', 'Hannoveraner', 'Isländer', 'Araber'];
+    state.horses.push(Model.generateHorse({ sex: 'hengst', breed: startBreeds[0], focusDisc: focusDisc, quality: 0.55, ageYears: 6, currentWeek: 0, origin: 'Startbestand' }));
     for (let i = 1; i < 4; i++) {
-      state.horses.push(Model.generateHorse({ sex: 'stute', breed: startBreeds[i], quality: 0.45 + Math.random() * 0.2, ageYears: 4 + Math.random() * 5, currentWeek: 0, origin: 'Startbestand' }));
+      state.horses.push(Model.generateHorse({ sex: 'stute', breed: startBreeds[i], focusDisc: focusDisc, quality: 0.45 + Math.random() * 0.2, ageYears: 4 + Math.random() * 5, currentWeek: 0, origin: 'Startbestand' }));
+    }
+    if (chosen || focusDisc) {
+      log('Startbestand: ' + (chosen || 'gemischte Rassen') +
+        (focusDisc ? ' · Schwerpunkt ' + focusDisc.join(' & ') : '') + '.', 'info');
     }
 
     state.rivals = Economy.initRivals(state);

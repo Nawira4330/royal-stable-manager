@@ -230,6 +230,11 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 .overlay .box.wide { max-width: 800px; }
 .overlay .box h1 { font-size: 1.9rem; color: var(--accent); }
 
+/* Startformular: Beschriftungen auf eigener Zeile, Felder volle Breite. */
+#start-overlay label { display: block; font-weight: 600; font-size: .9rem; }
+#start-overlay > .box > input[type="text"],
+#start-overlay > .box > select { width: 100%; }
+
 .howto-body { max-height: 70vh; overflow-y: auto; padding-right: .5rem; }
 .howto-body h3 { margin: 1.15rem 0 .25rem; font-size: 1.05rem; }
 .howto-body h3:first-child { margin-top: .2rem; }

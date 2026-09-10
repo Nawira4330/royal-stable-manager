@@ -57,6 +57,13 @@
       </p>
       <label for="new-stud-name">Name deines Gestüts</label>
       <input type="text" id="new-stud-name" placeholder="z.B. Gestüt Eichenhof" />
+      <label for="new-breed">Rasse der Startpferde</label>
+      <select id="new-breed"><option value="">zufällig gemischt</option></select>
+      <label>Schwerpunkt — 2 Disziplinen (zufällig begabte Startpferde)</label>
+      <div class="row">
+        <select id="new-disc-1" style="flex:1;min-width:0"><option value="">— egal —</option></select>
+        <select id="new-disc-2" style="flex:1;min-width:0"><option value="">— egal —</option></select>
+      </div>
       <div class="row">
         <button id="btn-new">Neues Spiel</button>
         <button class="secondary" id="btn-continue" hidden>Weiterspielen</button>
@@ -115,6 +122,13 @@
         <p>Baue dein Gestüt aus, züchte immer bessere Pferde und halte die Kasse im Plus.
         Erfolge auf Turnieren bringen <b>Preisgeld</b> und <b>Prestige</b> — mit dem Rang werden
         Marktpferde, Auktionen und Deckhengste besser.</p>
+
+        <h3>Spielstart</h3>
+        <p>Auf dem Startbildschirm wählst du neben dem <b>Gestütsnamen</b> optional eine
+        <b>Rasse</b> und <b>zwei Schwerpunkt-Disziplinen</b>. Deine vier Startpferde (1 Hengst,
+        3 Stuten) sind dann alle dieser Rasse und im Schnitt <b>deutlich stärker begabt</b> in
+        den beiden gewählten Disziplinen — die konkreten Werte sind zufällig. Ohne Wahl
+        bekommst du gemischte Rassen wie bisher.</p>
 
         <h3>„Woche weiter"</h3>
         <p>Ein Klick lässt eine Woche vergehen. Dabei passiert alles auf einmal:</p>
