@@ -179,7 +179,7 @@ const UI = (function () {
 
         <div class="card">
           <h3>Anlagen</h3>
-          <table><tbody>${facHtml}</tbody></table>
+          <div class="table-wrap"><table><tbody>${facHtml}</tbody></table></div>
         </div>
       </div>
 
@@ -1115,7 +1115,7 @@ const UI = (function () {
           (r.player ? ' <b>(du)</b>' : '') + '</td><td class="small">' + esc(r.scoreLabel || '') + '</td>' +
           '<td class="right small">' + (r.prize ? fmt(r.prize) : '') + '</td></tr>').join('');
         resultTbl = '<details><summary class="small">Ergebnisliste (' + show._allResults.length + ' Starter)</summary>' +
-          '<table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' + rows + '</tbody></table></details>';
+          '<div class="table-wrap"><table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
       }
 
       return `<div class="card stack">
@@ -1137,8 +1137,8 @@ const UI = (function () {
         (r.player ? ' <b>(du)</b>' : '') + '</td><td class="small">' + esc(r.scoreLabel || '') + '</td>' +
         '<td class="right small">' + (r.prize ? fmt(r.prize) : '') + '</td></tr>').join('');
       return '<details><summary class="small"><b>Wo. ' + rr.week + ' — ' + esc(rr.name) + '</b></summary>' +
-        '<table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' +
-        rows + '</tbody></table></details>';
+        '<div class="table-wrap"><table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' +
+        rows + '</tbody></table></div></details>';
     }).join('');
 
     // Saisonwertung: eigene Pferde je Disziplin, mit Championat-Qualifikation.
@@ -1163,7 +1163,7 @@ const UI = (function () {
       <h3>🏇 Gestüts-Rangliste — Saison ${s.seasonYear || 1}</h3>
       <p class="small muted">Jahres-Championat in <b>${champIn}</b> Woche${champIn === 1 ? '' : 'n'}: je Disziplin ein Finale für alle Pferde ab
       ${Economy.CHAMP_QUAL} Saisonpunkten, dazu der Gesamt-Titel fürs punktbeste Gestüt. Danach werden die Saisonpunkte genullt.</p>
-      <table class="small"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${rankRows}</tbody></table>
+      <div class="table-wrap"><table class="small"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${rankRows}</tbody></table></div>
     </div>`;
 
     // Gemeinsame Freundes-Rangliste: du + importierte Freundes-Wertungen.
@@ -1184,7 +1184,7 @@ const UI = (function () {
         <input type="text" id="ranking-import" placeholder="Ranglisten-Code eines Freundes…" style="flex:1;min-width:180px;font-family:ui-monospace,Consolas,monospace;font-size:.75rem">
         <button class="small secondary" data-action="import-ranking">übernehmen</button>
       </div>
-      <table class="small" style="margin-top:.5rem"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${frRows}</tbody></table>
+      <div class="table-wrap" style="margin-top:.5rem"><table class="small"><thead><tr><th>#</th><th>Gestüt</th><th class="right">Saisonpunkte</th><th class="right">Prestige</th></tr></thead><tbody>${frRows}</tbody></table></div>
       ${(s.friendRankings || []).length ? '<button class="small secondary" data-action="clear-rankings" style="margin-top:.4rem">Freundes-Wertungen leeren</button>' : ''}
     </div>`;
 
@@ -1320,7 +1320,7 @@ const UI = (function () {
       <div class="grid cols-3" style="margin-top:1rem">${offers}</div>
       <div class="card" style="margin-top:1rem">
         <h3>Deine Verkaufsangebote</h3>
-        ${listings ? '<table><thead><tr><th>Pferd</th><th>dein Preis</th><th>Marktwert</th><th>gelistet</th><th></th></tr></thead><tbody>' + listings + '</tbody></table>'
+        ${listings ? '<div class="table-wrap"><table><thead><tr><th>Pferd</th><th>dein Preis</th><th>Marktwert</th><th>gelistet</th><th></th></tr></thead><tbody>' + listings + '</tbody></table></div>'
           : '<p class="muted small">Keine aktiven Verkaufsangebote. Im Tab „Stall" ein Pferd anbieten.</p>'}
       </div>`;
   };

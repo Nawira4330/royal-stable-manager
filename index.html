@@ -2,34 +2,38 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self'; connect-src 'self'" />
   <title>Gestütsspiel</title>
   <link rel="stylesheet" href="css/game.css" />
 </head>
 <body>
-  <header class="topbar" id="topbar" hidden>
-    <span class="brand" id="tb-stud">Gestüt</span>
-    <span class="stat">Woche <b id="tb-week">0</b> <span class="muted small" id="tb-year"></span></span>
-    <span class="stat" id="tb-cash-wrap">Kasse <b id="tb-cash">0 €</b></span>
-    <span class="stat">Prestige <b id="tb-prestige">0</b> <span class="stars" id="tb-stars"></span></span>
-    <span class="stat">Stall <b id="tb-stall">0/0</b></span>
-    <span class="spacer"></span>
-    <button id="btn-week">Woche weiter ▶</button>
-    <button class="secondary" id="btn-save">Speichern</button>
-    <button class="secondary" id="btn-howto">❔ Anleitung</button>
-    <button class="secondary" id="btn-menu">Menü</button>
-  </header>
+  <div class="chrome" id="chrome">
+    <header class="topbar" id="topbar" hidden>
+      <span class="brand" id="tb-stud">Gestüt</span>
+      <div class="tb-stats">
+        <span class="stat">Woche <b id="tb-week">0</b> <span class="muted small" id="tb-year"></span></span>
+        <span class="stat" id="tb-cash-wrap">Kasse <b id="tb-cash">0 €</b></span>
+        <span class="stat">Prestige <b id="tb-prestige">0</b> <span class="stars" id="tb-stars"></span></span>
+        <span class="stat">Stall <b id="tb-stall">0/0</b></span>
+      </div>
+      <span class="spacer"></span>
+      <button id="btn-week">Woche weiter ▶</button>
+      <button class="secondary" id="btn-save">Speichern</button>
+      <button class="secondary" id="btn-howto">❔ Anleitung</button>
+      <button class="secondary" id="btn-menu">Menü</button>
+    </header>
 
-  <nav class="tabs" id="tabs" hidden>
-    <button class="tab-btn active" data-tab="gestüt">🏡 Gestüt</button>
-    <button class="tab-btn" data-tab="stall">🐴 Stall</button>
-    <button class="tab-btn" data-tab="zucht">🧬 Zucht</button>
-    <button class="tab-btn" data-tab="schauen">🏆 Schauen</button>
-    <button class="tab-btn" data-tab="auktion">🔨 Auktion</button>
-    <button class="tab-btn" data-tab="markt">🛒 Markt</button>
-  </nav>
+    <nav class="tabs" id="tabs" hidden>
+      <button class="tab-btn active" data-tab="gestüt"><span class="tab-ico">🏡</span><span class="tab-label">Gestüt</span></button>
+      <button class="tab-btn" data-tab="stall"><span class="tab-ico">🐴</span><span class="tab-label">Stall</span></button>
+      <button class="tab-btn" data-tab="zucht"><span class="tab-ico">🧬</span><span class="tab-label">Zucht</span></button>
+      <button class="tab-btn" data-tab="schauen"><span class="tab-ico">🏆</span><span class="tab-label">Schauen</span></button>
+      <button class="tab-btn" data-tab="auktion"><span class="tab-ico">🔨</span><span class="tab-label">Auktion</span></button>
+      <button class="tab-btn" data-tab="markt"><span class="tab-ico">🛒</span><span class="tab-label">Markt</span></button>
+    </nav>
+  </div>
 
   <main id="view"></main>
 

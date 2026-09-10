@@ -56,6 +56,8 @@ body {
   background-attachment: fixed;
   color: var(--text);
   line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: clip; /* fängt seltene Überbreiten ab, ohne sticky zu brechen */
 }
 
 h1, h2, h3 { font-family: var(--font-heading); font-weight: 400; color: var(--accent-dark); margin: 0 0 .4rem; }
@@ -87,15 +89,18 @@ input, select {
   max-width: 100%;
 }
 
+/* --- Kopf + Tabs zusammen als ein sticky Block (kein fragiles top-Offset) --- */
+.chrome { position: sticky; top: 0; z-index: 20; }
+
 /* --- Kopfzeile --- */
 .topbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.1rem;
   padding: .6rem 1.1rem;
   background: var(--header-bg);
   color: var(--header-text);
-  position: sticky; top: 0; z-index: 20;
 }
 .topbar .brand { font-family: var(--font-heading); font-size: 1.3rem; color: var(--header-text); }
+.tb-stats { display: contents; }
 .topbar .stat { font-size: .92rem; }
 .topbar .stat b { font-size: 1rem; }
 .topbar .stat.cash-neg b { color: #ffb3b0; }
@@ -105,8 +110,9 @@ input, select {
 .stars { color: var(--gold); letter-spacing: 1px; }
 
 /* --- Tab-Navigation --- */
-.tabs { display: flex; flex-wrap: wrap; gap: .2rem; padding: 0 1rem; background: var(--surface); border-bottom: 2px solid var(--border); position: sticky; top: 44px; z-index: 15; }
-.tab-btn { background: none; border: none; border-bottom: 3px solid transparent; border-radius: 0; color: var(--muted); font-weight: 600; padding: .6rem .9rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: .2rem; padding: 0 1rem; background: var(--surface); border-bottom: 2px solid var(--border); }
+.tab-btn { display: flex; align-items: center; gap: .35rem; background: none; border: none; border-bottom: 3px solid transparent; border-radius: 0; color: var(--muted); font-weight: 600; padding: .6rem .9rem; }
+.tab-btn .tab-ico { font-size: 1rem; line-height: 1; }
 .tab-btn:hover { background: rgba(var(--accent-rgb), .08); color: var(--text); }
 .tab-btn.active { color: var(--accent-dark); border-bottom-color: var(--accent-dark); }
 
@@ -118,10 +124,6 @@ main { max-width: 1400px; margin: 0 auto; padding: 1.1rem; }
 .grid > * { min-width: 0; }
 .cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .cols-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-
-@media (max-width: 380px) {
-  .cols-2 { grid-template-columns: 1fr; }
-}
 
 /* Stall: Liste + Detailspalte nebeneinander, auf schmalen Schirmen gestapelt. */
 .stall-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1rem; }
@@ -246,8 +248,67 @@ details.subtraits .statline { grid-template-columns: 8.5rem 1fr 1.4rem; }
 }
 .toast.err { background: var(--danger); }
 
-@media (max-width: 640px) {
-  .topbar { top: 0; }
-  .tabs { top: 92px; }
-  .statline { grid-template-columns: 6rem 1fr 2.4rem; }
+/* ================= Handy / schmale Schirme ================= */
+@media (max-width: 760px) {
+  main { padding: .6rem; padding-bottom: 4rem; }
+  .card { padding: .75rem; }
+  .grid { gap: .7rem; }
+  .cols-2, .cols-3 { grid-template-columns: 1fr; }
+
+  /* Kopf scrollt mit; nur die Tab-Leiste bleibt oben kleben. `.chrome`
+     wird aufgelöst, damit `.tabs` relativ zum Viewport klebt (statt nur
+     innerhalb der Kopf-Box). */
+  .chrome { display: contents; }
+  .tabs { position: sticky; top: 0; z-index: 15; gap: 0; padding: 0; }
+
+  .topbar { gap: .3rem .8rem; padding: .5rem .7rem; }
+  .topbar .brand { display: none; }
+  .topbar .stars { display: none; }
+  .tb-stats { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: .1rem 1rem; }
+  .topbar .stat { font-size: .82rem; }
+  .topbar .stat b { font-size: .9rem; }
+  .topbar .spacer { display: none; }
+  .topbar button.secondary { flex: 1 1 0; font-size: .82rem; padding: .5rem .3rem; }
+
+  /* „Woche weiter" als immer erreichbarer Aktionsknopf unten rechts. */
+  #btn-week {
+    position: fixed; z-index: 30;
+    right: .7rem; bottom: calc(.7rem + env(safe-area-inset-bottom, 0px));
+    border-radius: 999px; padding: .75rem 1.2rem; font-size: .95rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+  }
+
+  /* Tabs: Icon + kleines Label gestapelt, alle sechs nebeneinander. */
+  .tab-btn {
+    flex: 1 1 0; flex-direction: column; gap: 1px;
+    padding: .4rem .1rem; min-height: 46px; text-align: center;
+  }
+  .tab-btn .tab-ico { font-size: 1.15rem; }
+  .tab-btn .tab-label { font-size: .6rem; line-height: 1.1; }
+  .tab-btn.active { background: rgba(var(--accent-rgb), .1); }
+
+  /* Detailwerte & Formulare */
+  .statline { grid-template-columns: 5.5rem 1fr 2.2rem; gap: .4rem; font-size: .8rem; }
+  details.subtraits > summary { grid-template-columns: 6.5rem 1fr; }
+  details.subtraits .statline { grid-template-columns: 6.5rem 1fr 1.4rem; }
+  .plan-grid { grid-template-columns: repeat(2, 1fr); }
+  .stud-filter { padding: .5rem; gap: .5rem .6rem; }
+  .stud-filter label { flex: 1 1 43%; }
+  .stud-filter input, .stud-filter select { width: 100%; max-width: none; }
+  th, td { padding: .35rem .4rem; font-size: .82rem; }
+
+  /* Overlays fast bildschirmfüllend */
+  .overlay { padding: .5rem; }
+  .overlay .box, .overlay .box.wide { padding: 1rem; max-height: 94vh; overflow-y: auto; }
+  .overlay .box h1 { font-size: 1.5rem; }
+  .howto-body { max-height: none; overflow: visible; padding-right: 0; }
+  .ped-node { min-width: 104px; font-size: .76rem; }
+  .toast { bottom: .8rem; left: .8rem; right: .8rem; transform: none; text-align: center; }
+}
+
+@media (max-width: 380px) {
+  .tb-stats { gap: .1rem .6rem; }
+  .topbar .stat { font-size: .76rem; }
+  .tab-btn .tab-label { font-size: .55rem; }
+  .statline { grid-template-columns: 4.6rem 1fr 2rem; }
 }
