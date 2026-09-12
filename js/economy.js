@@ -28,6 +28,15 @@ const Economy = (function () {
   // davon erlaubt, da dort gerade die tragende Stute gezeigt wird.
   const PREGNANT_SPORT_LIMIT_WEEKS = 13;
 
+  // --- Ausritte/Wanderreiten: leichte Alternative zum Disziplintraining in
+  // einem Wochenplan-Slot - für Pferde, die gerade nicht auf ein Turnier
+  // hintrainieren (z. B. trächtige Stuten, Pferde mit ausgereiztem Potenzial).
+  // Kostet wenig Energie, bringt etwas Einnahmen (Gäste/Ausritte) und pflegt
+  // Nervenstärke/Umgänglichkeit, statt einen reinen Ruhetag zu verschenken.
+  const AUSRITT_ENERGY_COST = 5;
+  const AUSRITT_INCOME = 30;
+  const AUSRITT_GAIN = 0.15;
+
   // --- Fohlen-/Jungpferde-Aufzucht (bis MATURITY_YEARS). Grundausbildung
   // statt Turnierdisziplinen - Skills/Potenzial werden erst ab der Reife
   // trainiert, aber Interieur/Exterieur lassen sich schon vorher gezielt
@@ -37,8 +46,11 @@ const Economy = (function () {
   const FOAL_ACTIVITIES = {
     'Bodenarbeit': { group: 'interieur', traits: ['Lernwille', 'Umgänglichkeit'], minAge: 0 },
     'Sozialisierung': { group: 'interieur', traits: ['Nervenstärke', 'Umgänglichkeit'], minAge: 0 },
+    'Verladetraining': { group: 'interieur', traits: ['Nervenstärke'], minAge: 0.5 },
+    'Wassergewöhnung': { group: 'interieur', traits: ['Nervenstärke', 'Leistungsbereitschaft'], minAge: 0.5 },
     'Freispringen': { group: 'exterieur', traits: ['Bewegung', 'Hinterhand'], minAge: 1, injureChance: 0.015 },
   };
+  const FOAL_SLOTS = 3;
 
   // --- Hengst-Absamung / Gefriersperma.
   const SEMEN_COST = 260;          // Labor-/Tierarztgebühr je Absamung
@@ -47,6 +59,9 @@ const Economy = (function () {
   const SEMEN_COOLDOWN_WEEKS = 2;  // Mindestabstand zwischen zwei Absamungen
   const SEMEN_FERT_MULT = 0.82;    // Gefriersperma befruchtet seltener als Natursprung/Frischsamen
   const SEMEN_THAW_FEE = 180;      // Auftau-/Besamungsgebühr je Einsatz einer Portion
+  const SEMEN_ORDER_DOSES = 2;     // Portionen je Bestellung aus der Deckstation
+  const SEMEN_ORDER_MULT = 1.5;    // Aufschlag auf die Deckgebühr (Labor/Versand/Lagerung)
+  function semenOrderCost(studFee) { return Math.round(studFee * SEMEN_ORDER_MULT / 50) * 50; }
 
   // --- Anlagen / Gebäude. Jede Stufe: Kosten + Effekt. Stufe 0 = Startwert.
   const FACILITIES = {
@@ -289,7 +304,7 @@ const Economy = (function () {
   // --- Marktangebot erzeugen (Kaufpferde). Preise skalieren mit der Nachfrage.
   function rollMarket(state) {
     const tier = prestigeTier(state).stars;
-    const n = 4 + Model.randInt(0, 2);
+    const n = 7 + Model.randInt(0, 3);
     const list = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.4 + tier * 0.05, 0.16), 0.05, 0.98);
@@ -390,7 +405,7 @@ const Economy = (function () {
   //     ein Steckbrief in der Trächtigkeit gespeichert.
   function rollStudRoster(state) {
     const tier = prestigeTier(state).stars;
-    const n = 4 + Model.randInt(0, 2);
+    const n = 7 + Model.randInt(0, 3);
     const roster = [];
     // Eine Auswahl über verschiedene Rassen, plus (falls Prestige hoch) ein
     // absoluter Spitzenvererber.
@@ -418,7 +433,7 @@ const Economy = (function () {
   // --- Auktion: Lose + KI-Bieter.
   function rollAuction(state) {
     const tier = prestigeTier(state).stars;
-    const n = 3 + Model.randInt(0, 2);
+    const n = 6 + Model.randInt(0, 3);
     const lots = [];
     for (let i = 0; i < n; i++) {
       const q = clamp(Model.gauss(0.5 + tier * 0.06, 0.18), 0.1, 0.99);
@@ -545,7 +560,27 @@ const Economy = (function () {
     if (Math.random() < 0.6) {
       shows.push(makeShow('koerung', null, clamp(Model.randInt(2, tier + 2), 2, 5), false));
     }
+    // Fohlenschau: für 0-3-Jährige, bewertet Exterieur/Interieur/Typ statt
+    // Turnierdisziplinen - eigener Auftritt für den Aufzuchtplan.
+    if (Math.random() < 0.55) {
+      shows.push(makeFohlenShow(state));
+    }
     return shows;
+  }
+
+  function makeFohlenShow(state) {
+    const pool = 800 + prestigeTier(state).stars * 300;
+    return {
+      id: 'show_' + Math.random().toString(36).slice(2, 8),
+      type: 'fohlen', discipline: null, level: 1, youngster: false,
+      name: 'Fohlenschau',
+      entryFee: Math.round(pool * 0.04),
+      travelCost: 40,
+      minSkill: 0, minConf: 0, minHealth: 45,
+      prizePool: pool,
+      fieldStrength: 35,
+      entered: [], done: false,
+    };
   }
 
   function makeShow(type, disc, level, youngster) {
@@ -577,6 +612,11 @@ const Economy = (function () {
   // wenn es passt, sonst einen Klartext-Grund.
   function eligibilityReason(horse, show, currentWeek) {
     const y = Model.ageYears(horse, currentWeek);
+    if (show.type === 'fohlen') {
+      if (y >= Model.MATURITY_YEARS) return horse.name + ' ist für die Fohlenschau zu alt (nur bis 3 Jahre).';
+      if (horse.health < show.minHealth) return horse.name + ' ist nicht fit genug (Gesundheit < ' + show.minHealth + ').';
+      return null;
+    }
     if (y < Model.MATURITY_YEARS) return horse.name + ' ist zu jung (< 3 Jahre).';
     if (show.youngster && y > 7) return 'Jungpferde-Prüfung: nur 3-7 Jahre.';
     if (horse.pregnancy && show.type === 'sport') {
@@ -611,7 +651,7 @@ const Economy = (function () {
 
   // Disziplin-gerechte Darstellung der Wertung.
   function showScoreLabel(show, rawScore, leaderScore) {
-    if (show.type === 'zucht' || show.type === 'koerung') return clamp(5 + rawScore / 18, 3, 10).toFixed(1) + '/10';
+    if (show.type === 'zucht' || show.type === 'koerung' || show.type === 'fohlen') return clamp(5 + rawScore / 18, 3, 10).toFixed(1) + '/10';
     switch (show.discipline) {
       case 'Dressur':
       case 'Fahren':
@@ -835,6 +875,11 @@ const Economy = (function () {
         // Bundeschampionat der Jungpferde: Siegertitel.
         if (show.jung && place === 1) {
           h.titel = 'Bundeschampion ' + show.discipline + ' ' + (show.year || '');
+          results[results.length - 1].note = h.titel;
+        }
+        // Fohlenschau: Siegertitel für den Nachwuchs.
+        if (show.type === 'fohlen' && place === 1 && !h.titel) {
+          h.titel = 'Fohlenschausieger';
           results[results.length - 1].note = h.titel;
         }
       } else if (f.rival) {
@@ -1170,11 +1215,17 @@ const Economy = (function () {
     FOAL_ENERGY_COST: FOAL_ENERGY_COST,
     FOAL_GAIN: FOAL_GAIN,
     FOAL_ACTIVITIES: FOAL_ACTIVITIES,
+    FOAL_SLOTS: FOAL_SLOTS,
+    AUSRITT_ENERGY_COST: AUSRITT_ENERGY_COST,
+    AUSRITT_INCOME: AUSRITT_INCOME,
+    AUSRITT_GAIN: AUSRITT_GAIN,
     SEMEN_COST: SEMEN_COST,
     SEMEN_ENERGY: SEMEN_ENERGY,
     SEMEN_DOSES: SEMEN_DOSES,
     SEMEN_COOLDOWN_WEEKS: SEMEN_COOLDOWN_WEEKS,
     SEMEN_FERT_MULT: SEMEN_FERT_MULT,
     SEMEN_THAW_FEE: SEMEN_THAW_FEE,
+    SEMEN_ORDER_DOSES: SEMEN_ORDER_DOSES,
+    semenOrderCost: semenOrderCost,
   };
 })();

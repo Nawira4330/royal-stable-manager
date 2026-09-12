@@ -55,6 +55,7 @@ const Game = (function () {
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
       semenBank: [],      // Gefriersperma-Lager { id, sireId, sireName, breed, snapshot, doses, collectedWeek }
+      breedingGoal: null, // Zuchtziel { disc, target, reward, prestige, setWeek, doneWeek, foalName }
       auction: { lots: [], nextWeek: 2 },
       shows: [],
       saleListings: [],   // { horseId, price, weeks }
@@ -134,6 +135,7 @@ const Game = (function () {
     if (!Array.isArray(state.market)) state.market = [];
     if (!Array.isArray(state.studRoster)) state.studRoster = [];
     if (!Array.isArray(state.semenBank)) state.semenBank = [];
+    if (state.breedingGoal === undefined) state.breedingGoal = null;
     if (state.nextMarketWeek == null) state.nextMarketWeek = state.week;
     if (state.nextShowWeek == null) state.nextShowWeek = state.week;
     if (state.nextStudWeek == null) state.nextStudWeek = state.week;
@@ -573,10 +575,27 @@ const Game = (function () {
     setTrainingPlan(horseId, disc ? [disc, disc, disc] : []);
   }
 
+  // --- Zuchtziel: langfristiges Ziel über mehrere Generationen, mit
+  // Meilenstein-Prämie bei Erreichen (statt nur Hintergrundwachstum).
+  function setBreedingGoal(disc, target) {
+    if (DISC.indexOf(disc) === -1) return { ok: false, msg: 'Unbekannte Disziplin.' };
+    const t = clamp(Math.round(target), 60, 99);
+    const reward = clamp(Math.round((t - 50) * 400), 2000, 45000);
+    const prestige = clamp(Math.round((t - 50) * 0.6), 5, 60);
+    state.breedingGoal = { disc: disc, target: t, reward: reward, prestige: prestige, setWeek: state.week, doneWeek: null, foalName: null };
+    log('🎯 Neues Zuchtziel: ' + disc + '-Potenzial ≥ ' + t + ' bei einem Fohlen — Prämie ' + Economy.fmtEur(reward) + ' + ' + prestige + ' Prestige.', 'info');
+    save(); emit();
+    return { ok: true };
+  }
+  function clearBreedingGoal() {
+    state.breedingGoal = null;
+    save(); emit();
+  }
+
   function setAufzuchtPlan(horseId, plan) {
     const h = getHorse(horseId);
     if (!h || h.offered) return;
-    const clean = (Array.isArray(plan) ? plan : []).slice(0, 2)
+    const clean = (Array.isArray(plan) ? plan : []).slice(0, Economy.FOAL_SLOTS)
       .filter((a) => Economy.FOAL_ACTIVITIES[a]);
     h.aufzuchtPlan = clean;
     save(); emit();
@@ -1208,6 +1227,26 @@ const Game = (function () {
     save(); emit();
     return { ok: true };
   }
+  // Gefriersperma direkt aus der Deckstation bestellen (kein eigener Hengst
+  // nötig) - der Hengst wird nie geliefert, nur seine Genetik als Snapshot.
+  function orderSemen(studHorseId) {
+    const entry = (state.studRoster || []).find((x) => x.horse.id === studHorseId);
+    if (!entry) return { ok: false, msg: 'Hengst nicht in der Deckstation gefunden.' };
+    const cost = Economy.semenOrderCost(entry.studFee);
+    if (state.cash < cost) return { ok: false, msg: 'Bestellung ' + Economy.fmtEur(cost) + ' nicht bezahlbar.' };
+    state.cash -= cost;
+    const sem = {
+      id: 'semen_' + Math.random().toString(36).slice(2, 9),
+      sireId: entry.horse.id, sireName: entry.horse.name, breed: entry.horse.breed,
+      snapshot: Model.parentSnapshot(entry.horse),
+      doses: Economy.SEMEN_ORDER_DOSES,
+      collectedWeek: state.week,
+    };
+    state.semenBank.push(sem);
+    log('📦 Gefriersperma von ' + entry.horse.name + ' bestellt: ' + sem.doses + ' Portionen (-' + Economy.fmtEur(cost) + ').', 'cost');
+    save(); emit();
+    return { ok: true };
+  }
   function discardSemen(semenId) {
     const before = state.semenBank.length;
     state.semenBank = state.semenBank.filter((x) => x.id !== semenId);
@@ -1369,15 +1408,27 @@ const Game = (function () {
         Model.injureHealth(h, Model.randInt(2, 7), ['Fundament & Sehnen']);
         log('🌾 ' + h.name + ' hat sich auf der Koppel eine leichte Blessur geholt.', 'warn');
       }
-      // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten). Pferde in
-      // einem Verkaufsangebot trainieren nicht.
-      const plan = h.offered ? [] : (h.trainingPlan || []).filter((d) => d && DISC.indexOf(d) !== -1);
+      // Wochen-Trainingsplan abarbeiten (bis zu 6 Einheiten). "Ausritt" ist
+      // keine Disziplin, sondern eine leichte Alternative (siehe unten).
+      // Pferde in einem Verkaufsangebot trainieren nicht.
+      const plan = h.offered ? [] : (h.trainingPlan || []).filter((d) => d === 'Ausritt' || (d && DISC.indexOf(d) !== -1));
       const restSlots = 6 - plan.length;
       h.energy = clamp(h.energy + restSlots * 5, 0, 100);           // Ruhetage erholen extra
       if (y >= Model.MATURITY_YEARS && !(h.pregnancy && h.pregnancy.weeksLeft < 8)) {
-        let skipped = 0, injured = false;
+        let skipped = 0, injured = false, ausritte = 0;
         plan.forEach((d) => {
           if (injured) return;
+          if (d === 'Ausritt') {
+            if (h.energy < 15) { skipped++; return; }
+            state.cash += Economy.AUSRITT_INCOME;
+            ausritte++;
+            if (h.interieur) {
+              ['Nervenstärke', 'Umgänglichkeit'].forEach((t) => { h.interieur[t] = clamp(h.interieur[t] + Economy.AUSRITT_GAIN, 10, 99); });
+              h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
+            }
+            h.energy = clamp(h.energy - Economy.AUSRITT_ENERGY_COST, 0, 100);
+            return;
+          }
           if (h.energy < 25) { skipped++; return; }
           // Übertraining: hartes Training bei niedriger Energie kann eine
           // Sehnen-/Fundament-Verletzung auslösen.
@@ -1404,6 +1455,9 @@ const Game = (function () {
         });
         if (skipped > 0 && plan.length) {
           log(h.name + ' war zu erschöpft für ' + skipped + ' Trainingseinheit' + (skipped > 1 ? 'en' : '') + ' - mehr Ruhetage einplanen.', 'warn');
+        }
+        if (ausritte > 0) {
+          log('🐎 ' + h.name + ': ' + ausritte + ' Ausritt' + (ausritte > 1 ? 'e' : '') + ' — +' + Economy.fmtEur(ausritte * Economy.AUSRITT_INCOME) + '.', 'good');
         }
       }
       // Fohlen-/Jungpferde-Aufzucht: Grundausbildung statt Turnierdisziplinen,
@@ -1498,6 +1552,16 @@ const Game = (function () {
       foal.name = foalName();
       if (coBreedTag) foal.coBred = coBreedTag;
       state.stats.foalsBred += 1;
+      // Zuchtziel erreicht?
+      if (state.breedingGoal && !state.breedingGoal.doneWeek && foal.potential[state.breedingGoal.disc] >= state.breedingGoal.target) {
+        const g = state.breedingGoal;
+        state.cash += g.reward;
+        state.prestige += g.prestige;
+        g.doneWeek = state.week;
+        g.foalName = foal.name;
+        log('🎯 Zuchtziel erreicht! „' + foal.name + '" hat ' + g.disc + '-Potenzial ' + Math.round(foal.potential[g.disc]) +
+          ' (Ziel ' + g.target + ') — +' + Economy.fmtEur(g.reward) + ', +' + g.prestige + ' Prestige.', 'good');
+      }
       // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
       const sireHerd = sire && sire.id ? getHorse(sire.id) : null;
       [sireHerd, dam].forEach((p) => { if (p && p.foalsBred != null) { p.foalsBred += 1; p.foalQualSum = (p.foalQualSum || 0) + foal.quality; } });
@@ -1989,6 +2053,8 @@ const Game = (function () {
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
     setAufzuchtPlan: setAufzuchtPlan,
+    setBreedingGoal: setBreedingGoal,
+    clearBreedingGoal: clearBreedingGoal,
     applyPlanToAll: applyPlanToAll,
     takeLoan: takeLoan,
     repayLoan: repayLoan,
@@ -2034,6 +2100,7 @@ const Game = (function () {
     planBreeding: planBreeding,
     doBreeding: doBreeding,
     collectSemen: collectSemen,
+    orderSemen: orderSemen,
     discardSemen: discardSemen,
     nameFoal: nameFoal,
     auctionBid: auctionBid,
