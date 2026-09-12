@@ -31,7 +31,7 @@ const Model = (function () {
 
   const DISC = Names.DISCIPLINES;
   const WEEKS_PER_YEAR = 52;
-  const GESTATION_WEEKS = 48;
+  const GESTATION_WEEKS = 26;   // real ~48 Wochen, für weniger Leerlauf-Klicks halbiert
   const MATURITY_YEARS = 3;
   const MAX_BREED_AGE = 22;
 

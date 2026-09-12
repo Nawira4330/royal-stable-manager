@@ -305,18 +305,20 @@ const UI = (function () {
     </div>`;
   }
 
+  // Generische Verlaufs-Sparkline (Zahlenreihe -> Mini-SVG).
+  function sparkline(vals, color, label) {
+    if (vals.length < 2) return '';
+    const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    const span = (mx - mn) || 1;
+    const pts = vals.map((v, i) => (i / (vals.length - 1) * 100).toFixed(1) + ',' + (30 - (v - mn) / span * 28).toFixed(1)).join(' ');
+    return '<svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:56px;background:var(--surface-2);border-radius:var(--radius)">' +
+      '<polyline points="' + pts + '" fill="none" stroke="var(--' + (color || 'accent') + ')" stroke-width="1"/></svg>' +
+      '<div class="row between small muted"><span>' + fmt(mn) + '</span><span>' + esc(label || '') + '</span><span>' + fmt(mx) + '</span></div>';
+  }
+
   function statsCard(s) {
     const h = s.history || [];
-    let spark = '';
-    if (h.length >= 2) {
-      const vals = h.slice(-60).map((x) => x.cash);
-      const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
-      const span = (mx - mn) || 1;
-      const pts = vals.map((v, i) => (i / (vals.length - 1) * 100).toFixed(1) + ',' + (30 - (v - mn) / span * 28).toFixed(1)).join(' ');
-      spark = '<svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:56px;background:var(--surface-2);border-radius:var(--radius)">' +
-        '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="1"/></svg>' +
-        '<div class="row between small muted"><span>' + fmt(mn) + '</span><span>Kassenverlauf (bis 60 Wo.)</span><span>' + fmt(mx) + '</span></div>';
-    }
+    const spark = sparkline(h.slice(-60).map((x) => x.cash), 'accent', 'Kassenverlauf (bis 60 Wo.)');
     const bs = s.stats.bestSale;
     return `<div class="card stack">
       <h3>📈 Statistik</h3>
@@ -686,6 +688,24 @@ const UI = (function () {
         slotOpts(plan[i] || '') + '</select>').join('') + '</div>';
     const unitSlots = plan.filter((d) => d).length;
     const restSlots = 6 - unitSlots;
+
+    const aufzuchtPlan = h.aufzuchtPlan || [];
+    const aufOpts = (sel) => ['<option value="">— Ruhe —</option>'].concat(
+      Object.keys(Economy.FOAL_ACTIVITIES).map((a) => {
+        const def = Economy.FOAL_ACTIVITIES[a];
+        const locked = y < def.minAge;
+        return '<option value="' + a + '"' + (sel === a ? ' selected' : '') + (locked ? ' disabled' : '') + '>' +
+          a + (locked ? ' (ab ' + def.minAge + ' J.)' : '') + '</option>';
+      })
+    ).join('');
+    const aufzuchtEditor = !adult ? `<div>
+      <b class="small">Aufzuchtplan</b> <span class="muted small">(bis zu 2 Einheiten/Woche, Grundausbildung statt Turniertraining)</span>
+      <div class="plan-grid">${[0, 1].map((i) =>
+        '<select class="plan-slot auf-slot" data-action="set-aufzucht" data-id="' + h.id + '" data-slot="' + i + '">' +
+        aufOpts(aufzuchtPlan[i] || '') + '</select>').join('')}</div>
+      <div class="small muted">Bodenarbeit/Sozialisierung stärken Interieur-Noten (Lernwille, Umgänglichkeit, Nervenstärke),
+      Freispringen (ab 1 Jahr) die Bewegung/Hinterhand-Note. Ersetzt kein Turniertraining, macht das Pferd aber besser vorbereitet.</div>
+    </div>` : '';
     const planHint = plan.some((d) => d)
       ? '<div class="small muted">' + unitSlots + (unitSlots === 1 ? ' Einheit, ' : ' Einheiten, ') + restSlots + (restSlots === 1 ? ' Ruhetag' : ' Ruhetage') + '. Jede Einheit kostet ~12 Energie, Ruhetage geben +5 zurück. Zu wenig Energie → Einheiten fallen aus.</div>'
       : '<div class="small muted">Kein Training geplant — das Pferd erholt sich nur.</div>';
@@ -743,7 +763,7 @@ const UI = (function () {
           ${planHint}
           ${plan.some((d) => d) ? '<button class="small secondary" data-action="plan-to-all" data-id="' + h.id + '">Diesen Plan auf alle erwachsenen Pferde</button>' : ''}
         </div>
-        ${adult ? '' : '<p class="small muted">Training, Zucht und Turniere erst ab 3 Jahren.</p>'}
+        ${adult ? '' : aufzuchtEditor + '<p class="small muted">Turniere, Zucht und Körung erst ab 3 Jahren.</p>'}
         ${pts}
         ${lpBlock(h)}
         ${showRec}
@@ -1361,6 +1381,59 @@ const UI = (function () {
       </div>`;
   };
 
+  // --- 📊 Finanzen -------------------------------------------------------
+  views.finanzen = function () {
+    const s = Game.state;
+    const hist = s.history || [];
+    const herdVal = s.horses.reduce((a, x) => a + Game.valuation(x), 0);
+    const netWorth = s.cash + herdVal - (s.debt || 0);
+
+    const cashSpark = sparkline(hist.slice(-60).map((x) => x.cash), 'accent', 'Kasse (bis 60 Wo.)');
+    const netSpark = sparkline(hist.slice(-60).map((x) => x.cash + x.herd - (x.debt || 0)), 'good', 'Nettovermögen (bis 60 Wo.)');
+    const herdSpark = sparkline(hist.slice(-60).map((x) => x.herd), 'gold', 'Bestandswert (bis 60 Wo.)');
+    const debtSpark = (s.debt || hist.some((x) => x.debt)) ? sparkline(hist.slice(-60).map((x) => x.debt || 0), 'danger', 'Schulden (bis 60 Wo.)') : '';
+
+    // Netto pro Woche = Kassenänderung zur Vorwoche (aus history-Snapshots).
+    const recentHist = hist.slice(-16);
+    const weekly = recentHist.map((x, i) => {
+      const prev = i === 0 ? (hist[hist.length - recentHist.length - 1] || x) : recentHist[i - 1];
+      return { week: x.week, net: x.cash - prev.cash };
+    });
+    const maxAbs = Math.max(1, ...weekly.map((w) => Math.abs(w.net)));
+    const weeklyRows = weekly.slice().reverse().map((w) =>
+      '<div class="row between small"><span class="muted">Wo. ' + w.week + '</span>' +
+      '<div class="bar" style="flex:1;margin:0 .5rem;background:transparent"><span style="width:' + Math.round(Math.abs(w.net) / maxAbs * 100) +
+      '%;background:var(--' + (w.net >= 0 ? 'good' : 'danger') + ')"></span></div>' +
+      '<b class="' + (w.net >= 0 ? '' : 'tag warn') + '">' + (w.net >= 0 ? '+' : '') + fmt(w.net) + '</b></div>'
+    ).join('') || '<p class="small muted">Verlauf erscheint nach ein paar Wochen.</p>';
+
+    const txRows = s.eventLog.filter((e) => e.kind === 'cost' || e.kind === 'good').slice(0, 50).map((e) =>
+      '<div class="entry ' + esc(e.kind) + '"><span class="wk">Wo.' + e.week + '</span>' + esc(e.msg) + '</div>'
+    ).join('') || '<p class="muted">Noch keine Buchungen.</p>';
+
+    return `
+      <div class="grid cols-3">
+        <div class="card stack"><h3>Kasse</h3><div class="row between"><b class="${s.cash < 0 ? 'tag warn' : ''}" style="font-size:1.3rem">${fmt(s.cash)}</b></div>${cashSpark}</div>
+        <div class="card stack"><h3>Nettovermögen</h3><div class="row between"><b style="font-size:1.3rem">${fmt(netWorth)}</b></div>${netSpark}<div class="small muted">Kasse + Bestandswert − Schulden</div></div>
+        <div class="card stack"><h3>Bestandswert</h3><div class="row between"><b style="font-size:1.3rem">${fmt(herdVal)}</b></div>${herdSpark}</div>
+      </div>
+      <div class="grid cols-3" style="margin-top:1rem">
+        <div class="card stack"><h3>Wochenunterhalt</h3><b style="font-size:1.3rem">${fmt(Economy.weeklyUpkeep(s))}</b><div class="small muted">Futter + Pflege + Anlagen + Personal, jede Woche fällig</div></div>
+        <div class="card stack"><h3>Schulden</h3><b style="font-size:1.3rem" class="${s.debt > 0 ? 'tag warn' : ''}">${fmt(s.debt || 0)}</b>${debtSpark || '<div class="small muted">Aktuell schuldenfrei.</div>'}</div>
+        <div class="card stack"><h3>Gesamteinnahmen</h3><b style="font-size:1.3rem">${fmt(s.stats.totalEarnings || 0)}</b><div class="small muted">Seit Gründung, alle Quellen zusammen</div></div>
+      </div>
+      <div class="grid cols-2" style="margin-top:1rem">
+        <div class="card">
+          <h3>Netto pro Woche <span class="muted small">(Kassenänderung, letzte ${weekly.length})</span></h3>
+          ${weeklyRows}
+        </div>
+        <div class="card">
+          <h3>Kontoauszug <span class="muted small">(Geldbewegungen, neueste zuerst)</span></h3>
+          <div class="log">${txRows}</div>
+        </div>
+      </div>`;
+  };
+
   // ======================================================================
   //  EVENTS
   // ======================================================================
@@ -1370,6 +1443,20 @@ const UI = (function () {
       Game.advanceWeek();
       setTimeout(() => { $('#btn-week').disabled = false; }, 120);
       if (currentTab === 'schauen' || currentTab === 'auktion') showTab(currentTab);
+    });
+    $('#btn-week-jump').addEventListener('click', () => {
+      const n = parseInt($('#week-jump').value, 10) || 1;
+      $('#btn-week').disabled = true;
+      $('#btn-week-jump').disabled = true;
+      const weekBefore = Game.state.week;
+      const foalsBefore = Game.state.stats.foalsBred;
+      for (let i = 0; i < n; i++) Game.advanceWeek();
+      const foalsGained = Game.state.stats.foalsBred - foalsBefore;
+      $('#btn-week').disabled = false;
+      $('#btn-week-jump').disabled = false;
+      toast(n + ' Wochen vorgespult (Woche ' + weekBefore + ' → ' + Game.state.week + ')' +
+        (foalsGained ? ', ' + foalsGained + ' Fohlen geboren' : '') + '.');
+      showTab(currentTab);
     });
     $('#btn-save').addEventListener('click', () => {
       const ok = Game.save();
@@ -1432,6 +1519,11 @@ const UI = (function () {
       const arr = Array.from(slots).map((s) => s.value || null);
       Game.setTrainingPlan(t.dataset.id, arr);
       // gezielt nur den Detailbereich neu zeichnen wäre feiner; render() reicht.
+      render();
+    } else if (t.dataset.action === 'set-aufzucht') {
+      const slots = document.querySelectorAll('.auf-slot[data-id="' + t.dataset.id + '"]');
+      const arr = Array.from(slots).map((s) => s.value || null);
+      Game.setAufzuchtPlan(t.dataset.id, arr);
       render();
     } else if (t.dataset.action === 'set-focus') {
       Game.setTrainingFocus(t.dataset.id, t.value);

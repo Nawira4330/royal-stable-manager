@@ -23,6 +23,18 @@ const Economy = (function () {
   // spielerisch relevant, ohne Turniere zu blockieren (siehe oben).
   const TRAIN_ENERGY_COST = 9;
 
+  // --- Fohlen-/Jungpferde-Aufzucht (bis MATURITY_YEARS). Grundausbildung
+  // statt Turnierdisziplinen - Skills/Potenzial werden erst ab der Reife
+  // trainiert, aber Interieur/Exterieur lassen sich schon vorher gezielt
+  // fördern, statt dass die Jahre bis zur Reife nur Leerlauf sind.
+  const FOAL_ENERGY_COST = 8;
+  const FOAL_GAIN = 0.4;
+  const FOAL_ACTIVITIES = {
+    'Bodenarbeit': { group: 'interieur', traits: ['Lernwille', 'Umgänglichkeit'], minAge: 0 },
+    'Sozialisierung': { group: 'interieur', traits: ['Nervenstärke', 'Umgänglichkeit'], minAge: 0 },
+    'Freispringen': { group: 'exterieur', traits: ['Bewegung', 'Hinterhand'], minAge: 1, injureChance: 0.015 },
+  };
+
   // --- Hengst-Absamung / Gefriersperma.
   const SEMEN_COST = 260;          // Labor-/Tierarztgebühr je Absamung
   const SEMEN_ENERGY = 15;         // Energiekosten für den Hengst
@@ -1147,6 +1159,9 @@ const Economy = (function () {
     runChallengeScore: runChallengeScore,
     fmtEur: fmtEur,
     TRAIN_ENERGY_COST: TRAIN_ENERGY_COST,
+    FOAL_ENERGY_COST: FOAL_ENERGY_COST,
+    FOAL_GAIN: FOAL_GAIN,
+    FOAL_ACTIVITIES: FOAL_ACTIVITIES,
     SEMEN_COST: SEMEN_COST,
     SEMEN_ENERGY: SEMEN_ENERGY,
     SEMEN_DOSES: SEMEN_DOSES,

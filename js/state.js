@@ -573,6 +573,15 @@ const Game = (function () {
     setTrainingPlan(horseId, disc ? [disc, disc, disc] : []);
   }
 
+  function setAufzuchtPlan(horseId, plan) {
+    const h = getHorse(horseId);
+    if (!h || h.offered) return;
+    const clean = (Array.isArray(plan) ? plan : []).slice(0, 2)
+      .filter((a) => Economy.FOAL_ACTIVITIES[a]);
+    h.aufzuchtPlan = clean;
+    save(); emit();
+  }
+
   function euthanizeOrSellQuick(horseId) {
     // "Schnellverkauf" an einen Händler: halber Schätzwert, leicht von der
     // Tagesnachfrage beeinflusst.
@@ -1397,6 +1406,28 @@ const Game = (function () {
           log(h.name + ' war zu erschöpft für ' + skipped + ' Trainingseinheit' + (skipped > 1 ? 'en' : '') + ' - mehr Ruhetage einplanen.', 'warn');
         }
       }
+      // Fohlen-/Jungpferde-Aufzucht: Grundausbildung statt Turnierdisziplinen,
+      // damit die Jahre bis MATURITY_YEARS nicht reiner Leerlauf sind.
+      if (y < Model.MATURITY_YEARS && !h.offered) {
+        const aufzucht = (h.aufzuchtPlan || []).filter((a) => Economy.FOAL_ACTIVITIES[a] && y >= Economy.FOAL_ACTIVITIES[a].minAge);
+        let askipped = 0;
+        aufzucht.forEach((a) => {
+          if (h.energy < 15) { askipped++; return; }
+          const def = Economy.FOAL_ACTIVITIES[a];
+          if (def.injureChance && Math.random() < def.injureChance) {
+            Model.injureHealth(h, Model.randInt(2, 6), ['Fundament & Sehnen']);
+            log('⚠️ ' + h.name + ' hat sich beim ' + a + ' eine kleine Blessur geholt.', 'warn');
+          } else if (def.group === 'interieur' && h.interieur) {
+            def.traits.forEach((t) => { h.interieur[t] = clamp(h.interieur[t] + Economy.FOAL_GAIN, 10, 99); });
+            h.temperament = clamp(Math.round(Model.INTERIEUR_TRAITS.reduce((s, k) => s + h.interieur[k], 0) / Model.INTERIEUR_TRAITS.length), 10, 99);
+          } else if (def.group === 'exterieur' && h.exterieur) {
+            def.traits.forEach((t) => { h.exterieur[t] = clamp(h.exterieur[t] + Economy.FOAL_GAIN, 10, 100); });
+            h.conformation = clamp(Math.round(Model.EXTERIEUR_TRAITS.reduce((s, k) => s + h.exterieur[k], 0) / Model.EXTERIEUR_TRAITS.length), 10, 100);
+          }
+          h.energy = clamp(h.energy - Economy.FOAL_ENERGY_COST, 0, 100);
+        });
+        if (askipped > 0) log(h.name + ' war zu erschöpft für ' + askipped + ' Aufzucht-Einheit' + (askipped > 1 ? 'en' : '') + '.', 'warn');
+      }
       // Leistungsprüfung / Stationsprüfung läuft ab.
       if (h.pendingTest) {
         h.pendingTest.weeksLeft -= 1;
@@ -1957,6 +1988,7 @@ const Game = (function () {
     unlist: unlist,
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
+    setAufzuchtPlan: setAufzuchtPlan,
     applyPlanToAll: applyPlanToAll,
     takeLoan: takeLoan,
     repayLoan: repayLoan,
