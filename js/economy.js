@@ -23,6 +23,11 @@ const Economy = (function () {
   // spielerisch relevant, ohne Turniere zu blockieren (siehe oben).
   const TRAIN_ENERGY_COST = 9;
 
+  // Trächtige Stuten dürfen noch bis zum 3. Trächtigkeitsmonat im Sport
+  // starten (danach nicht mehr) - Zuchtschauen/Körung bleiben unabhängig
+  // davon erlaubt, da dort gerade die tragende Stute gezeigt wird.
+  const PREGNANT_SPORT_LIMIT_WEEKS = 13;
+
   // --- Fohlen-/Jungpferde-Aufzucht (bis MATURITY_YEARS). Grundausbildung
   // statt Turnierdisziplinen - Skills/Potenzial werden erst ab der Reife
   // trainiert, aber Interieur/Exterieur lassen sich schon vorher gezielt
@@ -574,7 +579,10 @@ const Economy = (function () {
     const y = Model.ageYears(horse, currentWeek);
     if (y < Model.MATURITY_YEARS) return horse.name + ' ist zu jung (< 3 Jahre).';
     if (show.youngster && y > 7) return 'Jungpferde-Prüfung: nur 3-7 Jahre.';
-    if (horse.pregnancy && show.type === 'sport') return 'Trächtige Stuten starten nicht im Sport.';
+    if (horse.pregnancy && show.type === 'sport') {
+      const weeksGone = Model.GESTATION_WEEKS - horse.pregnancy.weeksLeft;
+      if (weeksGone > PREGNANT_SPORT_LIMIT_WEEKS) return 'Trächtige Stute (> 3. Monat) startet nicht mehr im Sport.';
+    }
     if (show.type === 'sport' && horse.skill[show.discipline] < show.minSkill) {
       return 'Nicht qualifiziert: ' + show.discipline + ' ' + Math.round(horse.skill[show.discipline]) +
         ' < geforderte ' + show.minSkill + '.';
