@@ -1444,20 +1444,6 @@ const UI = (function () {
       setTimeout(() => { $('#btn-week').disabled = false; }, 120);
       if (currentTab === 'schauen' || currentTab === 'auktion') showTab(currentTab);
     });
-    $('#btn-week-jump').addEventListener('click', () => {
-      const n = parseInt($('#week-jump').value, 10) || 1;
-      $('#btn-week').disabled = true;
-      $('#btn-week-jump').disabled = true;
-      const weekBefore = Game.state.week;
-      const foalsBefore = Game.state.stats.foalsBred;
-      for (let i = 0; i < n; i++) Game.advanceWeek();
-      const foalsGained = Game.state.stats.foalsBred - foalsBefore;
-      $('#btn-week').disabled = false;
-      $('#btn-week-jump').disabled = false;
-      toast(n + ' Wochen vorgespult (Woche ' + weekBefore + ' → ' + Game.state.week + ')' +
-        (foalsGained ? ', ' + foalsGained + ' Fohlen geboren' : '') + '.');
-      showTab(currentTab);
-    });
     $('#btn-save').addEventListener('click', () => {
       const ok = Game.save();
       toast(ok ? 'Gespeichert.' : 'Speichern fehlgeschlagen — Browser-Speicher blockiert?', !ok);
