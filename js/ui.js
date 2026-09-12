@@ -455,6 +455,26 @@ const UI = (function () {
       '<button class="small secondary" data-action="offer-stud-service" data-id="' + h.id + '">🐴 Für fremde Zuchtstuten anbieten (Deckgeld)</button></div>';
   }
 
+  // Block in der Pferde-Detailansicht: Hengst absamen, Gefriersperma einlagern.
+  function semenBlock(h) {
+    const mine = (Game.state.semenBank || []).filter((x) => x.sireId === h.id);
+    const doses = mine.reduce((sum, x) => sum + x.doses, 0);
+    const last = h.lastSemenWeek;
+    const cooldownLeft = last != null ? Economy.SEMEN_COOLDOWN_WEEKS - (Game.state.week - last) : 0;
+    const canNow = cooldownLeft <= 0;
+    return '<div class="card" style="background:var(--surface-2)">' +
+      '<div class="row between"><b class="small">🧊 Gefriersperma</b>' +
+      (doses ? '<span class="tag">' + doses + ' Portion' + (doses === 1 ? '' : 'en') + ' eingelagert</span>' : '') + '</div>' +
+      '<div class="small muted">Absamen kostet ' + fmt(Economy.SEMEN_COST) + ' + ' + Economy.SEMEN_ENERGY + ' Energie und liefert ' +
+      Economy.SEMEN_DOSES + ' Portionen. Eine Portion künstliche Besamung kostet danach ' + fmt(Economy.SEMEN_THAW_FEE) +
+      ' Auftaugebühr, befruchtet aber seltener als der Natursprung (' + Math.round(Economy.SEMEN_FERT_MULT * 100) + ' %). ' +
+      'Die Portionen bleiben nutzbar, auch wenn ' + esc(h.name) + ' später verkauft wird.</div>' +
+      (canNow
+        ? '<button class="small secondary" data-action="collect-semen" data-id="' + h.id + '" style="margin-top:.35rem">🧊 Absamen (' + fmt(Economy.SEMEN_COST) + ')</button>'
+        : '<div class="small muted" style="margin-top:.35rem">Nächste Absamung in ' + cooldownLeft + ' Woche(n).</div>') +
+      '</div>';
+  }
+
   function friendsListBlock(s) {
     const list = (s.friends || []).slice().sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code));
     const rows = list.map((f) =>
@@ -751,6 +771,7 @@ const UI = (function () {
         </div>
         ${h.sex === 'hengst' && adult && (Model.approvalRank(h.zuchtzulassung) >= 2 || h.studService) ? studServiceBlock(h)
           : (h.sex === 'hengst' && adult ? '<div class="small muted">🐴 Eigene Deckstation für fremde Zuchtstuten: erst nach Körung/Eintragung möglich.</div>' : '')}
+        ${h.sex === 'hengst' && adult ? semenBlock(h) : ''}
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
       </div>`;
@@ -842,7 +863,8 @@ const UI = (function () {
   function sireExists(id) {
     if (Game.getHorse(id)) return true;
     return (Game.state.studRoster || []).some((x) => x.horse.id === id) ||
-      (Game.state.friendStuds || []).some((x) => x.horse.id === id);
+      (Game.state.friendStuds || []).some((x) => x.horse.id === id) ||
+      (Game.state.semenBank || []).some((x) => x.id === id);
   }
   function resolveSireHorse(id) {
     const own = Game.getHorse(id);
@@ -906,10 +928,15 @@ const UI = (function () {
     };
     const sireStud = (s.studRoster || []).map((x) => studOpt(x, null)).join('');
     const sireFriend = (s.friendStuds || []).filter((x) => !x.retired).map((x) => studOpt(x, x.friend)).join('');
+    const semenBank = s.semenBank || [];
+    const sireSemen = semenBank.map((x) => '<option value="' + x.id + '"' + (breedSire === x.id ? ' selected' : '') + '>' +
+      esc(x.sireName) + ' — ' + esc(x.breed) + ', ❄️ ' + x.doses + ' Portion' + (x.doses === 1 ? '' : 'en') +
+      ' (seit Wo. ' + x.collectedWeek + ')</option>').join('');
     const sireSelect = '<select data-action="pick-sire"><option value="">— Hengst wählen —</option>' +
       (sireOwn ? '<optgroup label="Eigene Hengste">' + sireOwn + '</optgroup>' : '') +
       (sireStud ? '<optgroup label="Deckstation">' + sireStud + '</optgroup>' : '') +
       (sireFriend ? '<optgroup label="Von Freunden">' + sireFriend + '</optgroup>' : '') +
+      (sireSemen ? '<optgroup label="🧊 Gefriersperma-Lager">' + sireSemen + '</optgroup>' : '') +
       '</select>';
 
     const pregnant = s.horses.filter((h) => h.pregnancy);
@@ -941,8 +968,9 @@ const UI = (function () {
           ${(!fc.mix && Model.approvalRank(plan.sire.zuchtzulassung) < 2) ? '<p class="small tag warn">' + esc(plan.sire.name) + ' ist nicht gekört → das Fohlen bekommt <b>keinen Zuchtbucheintrag</b> (−38 % Wert, kein Start bei Zuchtschau/Körung). Erst zur Körung schicken.</p>' : ''}
           <div class="row between"><span>Inzuchtkoeffizient (COI)</span><b class="tag ${coiCls}">${coiPct}%</b></div>
           ${plan.coi >= 0.125 ? '<p class="small tag warn">Hohe Inzucht — spürbare Abzüge bei Gesundheit, Begabungen und Fruchtbarkeit.</p>' : ''}
-          <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b> <span class="muted small">${plan.season.icon} ${plan.season.name}${plan.seasonFert >= 1.2 ? ' (Decksaison +)' : plan.seasonFert <= 0.8 ? ' (außerhalb der Saison −)' : ''}</span></div>
-          <div class="row between"><span>Deckgebühr${plan.external ? ' (Deckstation)' : ''}</span><b>${fmt(plan.fee)}</b></div>
+          <div class="row between"><span>Empfängnis-Chance</span><b>${Math.round(plan.conceiveChance * 100)}%</b> <span class="muted small">${plan.season.icon} ${plan.season.name}${plan.seasonFert >= 1.2 ? ' (Decksaison +)' : plan.seasonFert <= 0.8 ? ' (außerhalb der Saison −)' : ''}${plan.semen ? ', ❄️ Gefriersperma −' + Math.round((1 - Economy.SEMEN_FERT_MULT) * 100) + ' %' : ''}</span></div>
+          <div class="row between"><span>${plan.semen ? 'Auftaugebühr (Gefriersperma)' : 'Deckgebühr' + (plan.external ? ' (Deckstation)' : '')}</span><b>${fmt(plan.fee)}</b></div>
+          ${plan.semen ? '<div class="row between"><span class="small muted">Portionen im Lager</span><b class="small">' + plan.semen.doses + '</b></div>' : ''}
 
           <p style="margin:.6rem 0 .2rem"><b>Begabungen</b> <span class="muted small">(grün = hebt die Stute, rot = senkt sie)</span></p>
           ${begabungTable(fc, dam)}
@@ -955,13 +983,14 @@ const UI = (function () {
                <p class="small tag warn">Farbprognose erst möglich, wenn Hengst und Stute farbgetestet sind — sonst bleiben verdeckte Träger (Frame Overo / Roan) und das Letalrisiko unbekannt.</p>
                <div class="row">
                  ${plan.dam.genoTested === false ? '<button class="small" data-action="color-test" data-id="' + plan.dam.id + '">Farbtest ' + esc(plan.dam.name) + ' (' + fmt(Game.COLORTEST_COST) + ')</button>' : ''}
-                 ${plan.sire.genoTested === false ? '<button class="small" data-action="color-test" data-id="' + plan.sire.id + '">Farbtest ' + esc(plan.sire.name) + ' (' + fmt(Game.COLORTEST_COST) + ')</button>' : ''}
+                 ${(plan.sire.genoTested === false && !plan.semen) ? '<button class="small" data-action="color-test" data-id="' + plan.sire.id + '">Farbtest ' + esc(plan.sire.name) + ' (' + fmt(Game.COLORTEST_COST) + ')</button>' : ''}
+                 ${(plan.sire.genoTested === false && plan.semen) ? '<span class="small muted">' + esc(plan.sire.name) + ' war beim Absamen nicht farbgetestet — im eingefrorenen Zustand nicht mehr nachholbar.</span>' : ''}
                </div>`
             : `<p style="margin:.6rem 0 .2rem"><b>Mögliche Fohlenfarben</b> <span class="muted small">(Mendel)</span> — letale Fohlen ${plan.forecast.lethalPct} %</p>
                <ul class="foal-forecast small">
                  ${plan.forecast.outcomes.map((o) => '<li>' + o.pct + ' %&nbsp; ' + esc(o.label) + '</li>').join('')}
                </ul>`}
-          <button data-action="breed-confirm">Decken lassen (${fmt(plan.fee)})</button>`;
+          <button data-action="breed-confirm">${plan.semen ? 'Künstlich besamen' : 'Decken lassen'} (${fmt(plan.fee)})</button>`;
       }
     }
 
@@ -1052,6 +1081,13 @@ const UI = (function () {
       </div>
 
       ${pregHtml ? '<div style="margin-top:1rem">' + pregHtml + '</div>' : ''}
+
+      ${semenBank.length ? '<div class="card" style="margin-top:1rem"><h3>🧊 Gefriersperma-Lager</h3>' +
+        semenBank.map((x) => '<div class="row between"><span><b>' + esc(x.sireName) + '</b> <span class="muted small">' + esc(x.breed) +
+          ' · abgesamt Wo. ' + x.collectedWeek + '</span></span><span>' + x.doses + ' Portion' + (x.doses === 1 ? '' : 'en') +
+          ' <button class="small secondary" data-action="pick-sire-semen" data-id="' + x.id + '">im Zuchtplaner wählen</button> ' +
+          '<button class="small danger" data-action="discard-semen" data-id="' + x.id + '">entsorgen</button></span></div>').join('') +
+        '</div>' : ''}
 
       <div class="card" style="margin-top:1rem">
         <h3>🏇 Deckstation — Hengstsuche</h3>
@@ -1421,6 +1457,21 @@ const UI = (function () {
     if (a === 'select-horse') { selectedId = el.dataset.id; render(); return; }
 
     if (a === 'pick-stud') { breedSire = el.dataset.id; render(); toast('Hengst in den Zuchtplaner übernommen.'); return; }
+    if (a === 'pick-sire-semen') { breedSire = el.dataset.id; render(); toast('Gefriersperma in den Zuchtplaner übernommen.'); return; }
+
+    if (a === 'collect-semen') {
+      const h = Game.getHorse(el.dataset.id);
+      if (h && confirm(h.name + ' absamen und ' + Economy.SEMEN_DOSES + ' Portionen Gefriersperma einlagern (' + fmt(Economy.SEMEN_COST) + ')?')) {
+        const r = Game.collectSemen(h.id);
+        if (!r.ok) toast(r.msg, true); else toast('Abgesamt: ' + Economy.SEMEN_DOSES + ' Portionen eingelagert.');
+        render();
+      }
+      return;
+    }
+    if (a === 'discard-semen') {
+      if (confirm('Diese Gefriersperma-Portionen wirklich entsorgen?')) { Game.discardSemen(el.dataset.id); render(); }
+      return;
+    }
 
     if (a === 'stud-filter' && el.dataset.toggle) { studFilter.dir *= -1; render(); return; }
     if (a === 'stall-filter' && el.dataset.toggle) { stallFilter.dir *= -1; render(); return; }

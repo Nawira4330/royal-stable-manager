@@ -54,6 +54,7 @@ const Game = (function () {
       horses: [],
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
+      semenBank: [],      // Gefriersperma-Lager { id, sireId, sireName, breed, snapshot, doses, collectedWeek }
       auction: { lots: [], nextWeek: 2 },
       shows: [],
       saleListings: [],   // { horseId, price, weeks }
@@ -132,6 +133,7 @@ const Game = (function () {
     if (!Array.isArray(state.eventLog)) state.eventLog = [];
     if (!Array.isArray(state.market)) state.market = [];
     if (!Array.isArray(state.studRoster)) state.studRoster = [];
+    if (!Array.isArray(state.semenBank)) state.semenBank = [];
     if (state.nextMarketWeek == null) state.nextMarketWeek = state.week;
     if (state.nextShowWeek == null) state.nextShowWeek = state.week;
     if (state.nextStudWeek == null) state.nextStudWeek = state.week;
@@ -186,6 +188,7 @@ const Game = (function () {
     (state.market || []).forEach((o) => fix(o.horse));
     (state.studRoster || []).forEach((x) => fix(x.horse));
     if (state.auction && state.auction.lots) state.auction.lots.forEach((l) => fix(l.horse));
+    (state.semenBank || []).forEach((x) => fix(x.snapshot));
   }
   function load() {
     try {
@@ -222,6 +225,8 @@ const Game = (function () {
     if (entry) return { horse: entry.horse, external: true, fee: entry.studFee };
     const fr = (state.friendStuds || []).find((x) => x.horse.id === id && !x.retired);
     if (fr) return { horse: fr.horse, external: true, fee: fr.coBreed ? 0 : fr.studFee, friend: fr.friend, coBreed: fr.coBreed, coShare: fr.share };
+    const sem = (state.semenBank || []).find((x) => x.id === id);
+    if (sem) return { horse: sem.snapshot, external: true, fee: Economy.SEMEN_THAW_FEE, semen: sem };
     return null;
   }
   function stallFree() { return Economy.stallCapacity(state) - state.horses.length - (state.boarding || 0); }
@@ -1066,9 +1071,13 @@ const Game = (function () {
     if (dam.sex !== 'stute') return { error: dam.name + ' ist keine Stute.' };
     if (dam.pregnancy) return { error: dam.name + ' ist bereits trächtig.' };
     if (dam.offered) return { error: dam.name + ' ist in einem Verkaufsangebot.' };
-    if (sire.offered) return { error: sire.name + ' ist in einem Verkaufsangebot.' };
-    const sy = Model.ageYears(sire, state.week), dy = Model.ageYears(dam, state.week);
-    if (sy < Model.MATURITY_YEARS) return { error: sire.name + ' ist mit ' + sy.toFixed(1) + ' Jahren zu jung.' };
+    // Gefriersperma ist ein eingefrorener Steckbrief, kein lebendes Pferd -
+    // Angebots-/Alterscheck des Hengstes entfällt (das Alter zum Zeitpunkt
+    // der Absamung steckt bereits in den vererbten Werten des Snapshots).
+    if (!sr.semen && sire.offered) return { error: sire.name + ' ist in einem Verkaufsangebot.' };
+    const sy = sr.semen ? Model.MATURITY_YEARS : Model.ageYears(sire, state.week);
+    const dy = Model.ageYears(dam, state.week);
+    if (!sr.semen && sy < Model.MATURITY_YEARS) return { error: sire.name + ' ist mit ' + sy.toFixed(1) + ' Jahren zu jung.' };
     if (dy < Model.MATURITY_YEARS) return { error: dam.name + ' ist mit ' + dy.toFixed(1) + ' Jahren zu jung.' };
     if (dy > Model.MAX_BREED_AGE) return { error: dam.name + ' ist zu alt für die Zucht.' };
 
@@ -1089,6 +1098,7 @@ const Game = (function () {
     // Empfängnis-Wahrscheinlichkeit.
     const vet = Economy.facLevel(state, 'vet');
     let chance = 0.72 * vet.fert * Economy.feedDef(state).fertMult * Economy.seasonFertMult(state.week);
+    if (sr.semen) chance *= Economy.SEMEN_FERT_MULT;      // Gefriersperma befruchtet seltener als Natursprung
     chance *= clamp(1 - (dy - 12) * 0.05, 0.3, 1);        // Stutenalter
     chance *= clamp(dam.health / 90, 0.5, 1.05);
     chance *= clamp(1 - coi * 0.6, 0.4, 1);               // Inzucht senkt Fruchtbarkeit
@@ -1096,7 +1106,7 @@ const Game = (function () {
 
     return {
       sire: sire, dam: dam, external: sr.external, coi: coi,
-      friend: sr.friend || null, friendEntry: friendEntry,
+      friend: sr.friend || null, friendEntry: friendEntry, semen: sr.semen || null,
       forecast: forecast, statForecast: statForecast, match: match,
       fee: fee, conceiveChance: chance,
       season: Economy.season(state.week), seasonFert: Economy.seasonFertMult(state.week),
@@ -1119,12 +1129,23 @@ const Game = (function () {
       log('🤝 Co-Zucht mit ' + plan.sire.name + ' (' + friendLabel(plan.friend) + ', ' + plan.friendEntry.share +
         ' % Anteil am Fohlen-Verkauf) — kein Deckgeld.', 'info');
     }
-    log('Deckakt ' + plan.dam.name + ' × ' + plan.sire.name +
-      (plan.external ? ' (Deckstation)' : '') +
-      ' - Gebühr ' + Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%.', 'cost');
+    if (plan.semen) {
+      plan.semen.doses -= 1;
+      log('❄️ Künstliche Besamung ' + plan.dam.name + ' × ' + plan.sire.name + ' (Gefriersperma, noch ' +
+        Math.max(0, plan.semen.doses) + ' Portion' + (plan.semen.doses === 1 ? '' : 'en') + ') - Gebühr ' +
+        Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%.', 'cost');
+    } else {
+      log('Deckakt ' + plan.dam.name + ' × ' + plan.sire.name +
+        (plan.external ? ' (Deckstation)' : '') +
+        ' - Gebühr ' + Economy.fmtEur(plan.fee) + ', COI ' + (plan.coi * 100).toFixed(1) + '%.', 'cost');
+    }
+    const dropEmptySemen = () => {
+      if (plan.semen && plan.semen.doses <= 0) state.semenBank = state.semenBank.filter((x) => x.id !== plan.semen.id);
+    };
 
     if (Math.random() > plan.conceiveChance) {
       log('Die Bedeckung war nicht erfolgreich - ' + plan.dam.name + ' ist nicht trächtig geworden.', 'warn');
+      dropEmptySemen();
       save(); emit();
       return { ok: true, conceived: false };
     }
@@ -1133,14 +1154,56 @@ const Game = (function () {
       sireId: plan.sire.id,
       sireName: plan.sire.name,
       external: !!plan.external,
+      semen: !!plan.semen,
       sireSnapshot: Model.parentSnapshot(plan.sire),
       weeksLeft: Model.GESTATION_WEEKS,
       coBreed: (plan.friend && plan.friendEntry && plan.friendEntry.coBreed)
         ? { partner: plan.friend, partnerStud: plan.sire.name, share: plan.friendEntry.share } : null,
     };
     log(plan.dam.name + ' ist trächtig! Abfohlung in ' + Model.GESTATION_WEEKS + ' Wochen.', 'good');
+    dropEmptySemen();
     save(); emit();
     return { ok: true, conceived: true };
+  }
+
+  // --- Hengst-Absamung: erzeugt Gefriersperma-Portionen im Lager, die auch
+  //     ohne den lebenden Hengst (später verkauft, abgegeben, ...) für die
+  //     künstliche Besamung eingesetzt werden können.
+  function collectSemen(sireId) {
+    const h = getHorse(sireId);
+    if (!h) return { ok: false, msg: 'Pferd nicht gefunden.' };
+    if (h.sex !== 'hengst') return { ok: false, msg: h.name + ' ist kein Hengst.' };
+    const y = Model.ageYears(h, state.week);
+    if (y < Model.MATURITY_YEARS) return { ok: false, msg: h.name + ' ist zu jung (< 3 Jahre).' };
+    if (h.offered) return { ok: false, msg: h.name + ' ist in einem Freundes-Verkaufsangebot.' };
+    if (state.auction.lots.some((l) => l.consignedByPlayer && l.horse.id === h.id)) return { ok: false, msg: h.name + ' ist in der Auktion.' };
+    if (h.health < 55) return { ok: false, msg: h.name + ' ist nicht fit genug (Gesundheit < 55).' };
+    if (h.energy < Economy.SEMEN_ENERGY + 10) return { ok: false, msg: h.name + ' ist zu erschöpft für eine Absamung.' };
+    const last = h.lastSemenWeek;
+    if (last != null && state.week - last < Economy.SEMEN_COOLDOWN_WEEKS) {
+      return { ok: false, msg: h.name + ' braucht noch ' + (Economy.SEMEN_COOLDOWN_WEEKS - (state.week - last)) + ' Woche(n) Pause bis zur nächsten Absamung.' };
+    }
+    if (state.cash < Economy.SEMEN_COST) return { ok: false, msg: 'Labor-/Tierarztgebühr ' + Economy.fmtEur(Economy.SEMEN_COST) + ' nicht bezahlbar.' };
+    state.cash -= Economy.SEMEN_COST;
+    h.energy = clamp(h.energy - Economy.SEMEN_ENERGY, 0, 100);
+    h.lastSemenWeek = state.week;
+    const entry = {
+      id: 'semen_' + Math.random().toString(36).slice(2, 9),
+      sireId: h.id, sireName: h.name, breed: h.breed,
+      snapshot: Model.parentSnapshot(h),
+      doses: Economy.SEMEN_DOSES,
+      collectedWeek: state.week,
+    };
+    state.semenBank.push(entry);
+    log('🧊 ' + h.name + ' abgesamt: ' + entry.doses + ' Portionen Gefriersperma eingelagert (-' + Economy.fmtEur(Economy.SEMEN_COST) + ', -' + Economy.SEMEN_ENERGY + ' Energie).', 'cost');
+    save(); emit();
+    return { ok: true };
+  }
+  function discardSemen(semenId) {
+    const before = state.semenBank.length;
+    state.semenBank = state.semenBank.filter((x) => x.id !== semenId);
+    if (state.semenBank.length !== before) { save(); emit(); }
+    return { ok: state.semenBank.length !== before };
   }
 
   function nameFoal(foalId, name) {
@@ -1328,7 +1391,7 @@ const Game = (function () {
               * clamp(h.energy / 60, 0.4, 1.1);
             h.skill[d] = clamp(h.skill[d] + rate, 0, h.potential[d]);
           }
-          h.energy = clamp(h.energy - 12, 0, 100);
+          h.energy = clamp(h.energy - Economy.TRAIN_ENERGY_COST, 0, 100);
         });
         if (skipped > 0 && plan.length) {
           log(h.name + ' war zu erschöpft für ' + skipped + ' Trainingseinheit' + (skipped > 1 ? 'en' : '') + ' - mehr Ruhetage einplanen.', 'warn');
@@ -1938,6 +2001,8 @@ const Game = (function () {
     euthanizeOrSellQuick: euthanizeOrSellQuick,
     planBreeding: planBreeding,
     doBreeding: doBreeding,
+    collectSemen: collectSemen,
+    discardSemen: discardSemen,
     nameFoal: nameFoal,
     auctionBid: auctionBid,
     consignToAuction: consignToAuction,

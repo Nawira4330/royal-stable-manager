@@ -8,6 +8,23 @@ const Economy = (function () {
   const clamp = Model.clamp;
   const DISC = Model.DISC;
 
+  // Energiekosten je Trainingseinheit (bis zu 6/Woche). Bei 12 Punkten pro
+  // Einheit endete ein voll durchtrainiertes Pferd (100 -> 28 Energie) knapp
+  // UNTER dem Mindestwert von 30 für Sport-/Zuchtschauen (siehe minEnergy in
+  // makeShow) - eine volle Trainingswoche sperrte also praktisch immer die
+  // Turnierteilnahme in der Folgewoche. Mit 10 Punkten bleibt nach einer
+  // Volltrainingswoche noch Luft (~40 Energie), zwei Volltrainingswochen
+  // hintereinander drücken die Energie aber weiterhin unter die Schwelle.
+  const TRAIN_ENERGY_COST = 10;
+
+  // --- Hengst-Absamung / Gefriersperma.
+  const SEMEN_COST = 260;          // Labor-/Tierarztgebühr je Absamung
+  const SEMEN_ENERGY = 15;         // Energiekosten für den Hengst
+  const SEMEN_DOSES = 4;           // Portionen (Pailletten) je Absamung
+  const SEMEN_COOLDOWN_WEEKS = 2;  // Mindestabstand zwischen zwei Absamungen
+  const SEMEN_FERT_MULT = 0.82;    // Gefriersperma befruchtet seltener als Natursprung/Frischsamen
+  const SEMEN_THAW_FEE = 180;      // Auftau-/Besamungsgebühr je Einsatz einer Portion
+
   // --- Anlagen / Gebäude. Jede Stufe: Kosten + Effekt. Stufe 0 = Startwert.
   const FACILITIES = {
     stalls: {
@@ -549,6 +566,20 @@ const Economy = (function () {
     if ((show.type === 'zucht' || show.type === 'koerung')) {
       if (horse.noPapers || horse.isMix) return 'Ohne Zuchtbucheintrag (Vater nicht gekört) — keine Zuchtschau/Körung.';
       if (horse.conformation < show.minConf) return 'Exterieur ' + Math.round(horse.conformation) + ' < geforderte ' + show.minConf + '.';
+    }
+    // Körung/Prämierung bringt nur etwas, solange sich Zuchtzulassung oder
+    // Prämie noch verbessern können - sonst ließe sich dieselbe Körung immer
+    // wieder für Preisgeld/Prestige "farmen", ohne dass sich am Status etwas
+    // ändert.
+    if (show.type === 'koerung') {
+      const bestBuch = lpPassed(horse) ? 'Zuchtbuch I' : 'Zuchtbuch II';
+      const bestStatus = (horse.sex === 'hengst' ? 'gekört, ' : 'eingetragen, ') + bestBuch;
+      const canImproveApproval = approvalRank(bestStatus) > approvalRank(horse.zuchtzulassung);
+      const canImprovePraemie = praemieRank('Staatsprämie') > praemieRank(horse.praemie);
+      if (!canImproveApproval && !canImprovePraemie) {
+        return horse.name + ' hat bereits die bestmögliche Körung/Prämierung erreicht (' +
+          (horse.zuchtzulassung || 'ohne Zuchtzulassung') + ', ' + (horse.praemie || 'keine Prämie') + ') — erneute Anmeldung bringt nichts mehr.';
+      }
     }
     if (horse.energy < show.minEnergy) return horse.name + ' ist zu erschöpft (Energie < ' + show.minEnergy + ').';
     if (horse.health < show.minHealth) return horse.name + ' ist nicht fit genug (Gesundheit < ' + show.minHealth + ').';
@@ -1113,5 +1144,12 @@ const Economy = (function () {
     mulberry32: mulberry32,
     runChallengeScore: runChallengeScore,
     fmtEur: fmtEur,
+    TRAIN_ENERGY_COST: TRAIN_ENERGY_COST,
+    SEMEN_COST: SEMEN_COST,
+    SEMEN_ENERGY: SEMEN_ENERGY,
+    SEMEN_DOSES: SEMEN_DOSES,
+    SEMEN_COOLDOWN_WEEKS: SEMEN_COOLDOWN_WEEKS,
+    SEMEN_FERT_MULT: SEMEN_FERT_MULT,
+    SEMEN_THAW_FEE: SEMEN_THAW_FEE,
   };
 })();
