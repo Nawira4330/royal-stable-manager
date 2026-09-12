@@ -1140,7 +1140,7 @@ const UI = (function () {
         show.type === 'sport' ? 'Mindest-' + show.discipline + ' ' + show.minSkill
           : (show.type === 'koerung' ? 'Mindest-Exterieur ' + show.minConf + ', mit Zuchtbucheintrag' : 'Mindest-Exterieur ' + show.minConf),
         show.youngster ? 'nur 3–7 J.' : null,
-        'Energie ≥ ' + show.minEnergy + ', Gesundheit ≥ ' + show.minHealth,
+        'Gesundheit ≥ ' + show.minHealth,
       ].filter(Boolean).join(' · ');
       const typeLabel = show.type === 'sport' ? show.discipline : (show.type === 'koerung' ? 'Körung / Prämierung' : 'Zuchtschau');
 
@@ -1157,7 +1157,7 @@ const UI = (function () {
       return `<div class="card stack">
         <div class="row between"><b>${esc(show.name)}</b><span class="tag">Klasse ${show.level}</span></div>
         <div class="small muted">${esc(typeLabel)} ·
-          Nenngeld ${fmt(show.entryFee)} · Reise ${fmt(show.travelCost)} · Kraft −${show.energyCost} Energie · Preisgeld ${fmt(show.prizePool)}</div>
+          Nenngeld ${fmt(show.entryFee)} · Reise ${fmt(show.travelCost)} · Preisgeld ${fmt(show.prizePool)}</div>
         <div class="small">Zulassung: ${esc(reqTxt)}</div>
         ${entered.length ? '<div class="small">Genannt: ' + entered.map((h) =>
           esc(h.name) + ' <button class="small secondary" data-action="withdraw" data-show="' + show.id + '" data-id="' + h.id + '">×</button>').join(' ') + '</div>' : ''}

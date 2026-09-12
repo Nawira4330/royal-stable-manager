@@ -8,13 +8,12 @@ const Economy = (function () {
   const clamp = Model.clamp;
   const DISC = Model.DISC;
 
-  // Energiekosten je Trainingseinheit (bis zu 6/Woche). Bei 12 Punkten pro
-  // Einheit endete ein voll durchtrainiertes Pferd (100 -> 28 Energie) knapp
-  // UNTER dem Mindestwert von 30 für Sport-/Zuchtschauen (siehe minEnergy in
-  // makeShow) - eine volle Trainingswoche sperrte also praktisch immer die
-  // Turnierteilnahme in der Folgewoche. Mit 10 Punkten bleibt nach einer
-  // Volltrainingswoche noch Luft (~40 Energie), zwei Volltrainingswochen
-  // hintereinander drücken die Energie aber weiterhin unter die Schwelle.
+  // Energiekosten je Trainingseinheit (bis zu 6/Woche). Energie ist reine
+  // Trainingsressource - Turniere/Zuchtschauen/Körungen haben keine
+  // Energiekosten oder -Mindestwerte mehr (das gehörte zusammen mit der
+  // Gesundheit doppelt geprüft, siehe minHealth je Schau, und erlaubte
+  // sonst beliebig viele gleichzeitige Nennungen desselben Pferds pro Woche,
+  // ohne dass die sinkende Energie sich je auf die Turnierleistung auswirkte).
   const TRAIN_ENERGY_COST = 10;
 
   // --- Hengst-Absamung / Gefriersperma.
@@ -540,10 +539,8 @@ const Economy = (function () {
       name: baseName + (youngster ? ' (Jungpferde)' : ''),
       entryFee: type === 'koerung' ? Math.round(pool * 0.06) : Math.round(pool * 0.03),
       travelCost: Math.round(pool * 0.012) + 60 * level,
-      energyCost: type === 'koerung' ? 10 : 12 + level * 4,
       minSkill: type === 'sport' ? SPORT_MIN_SKILL[level - 1] : 0,
       minConf: type === 'zucht' ? ZUCHT_MIN_CONF[level - 1] : (type === 'koerung' ? KOER_MIN_CONF[level - 1] : 0),
-      minEnergy: type === 'koerung' ? 20 : 30,
       minHealth: type === 'koerung' ? 50 : 55,
       prizePool: type === 'koerung' ? Math.round(pool * 0.35) : pool,
       fieldStrength: 30 + level * 12,
@@ -581,7 +578,6 @@ const Economy = (function () {
           (horse.zuchtzulassung || 'ohne Zuchtzulassung') + ', ' + (horse.praemie || 'keine Prämie') + ') — erneute Anmeldung bringt nichts mehr.';
       }
     }
-    if (horse.energy < show.minEnergy) return horse.name + ' ist zu erschöpft (Energie < ' + show.minEnergy + ').';
     if (horse.health < show.minHealth) return horse.name + ' ist nicht fit genug (Gesundheit < ' + show.minHealth + ').';
     return null;
   }
@@ -772,7 +768,6 @@ const Economy = (function () {
         travelCost += show.travelCost || 0;
         h.earnings += prize;
         h.shows += 1;
-        h.energy = clamp(h.energy - (show.energyCost || 20), 0, 100);
         if (place === 1) { h.wins += 1; prestigeGain += 6 + show.level * 4; }
         else if (place <= 3) prestigeGain += 3 + show.level * 2;
         else if (place <= 5) prestigeGain += 1 + show.level;
@@ -848,7 +843,7 @@ const Economy = (function () {
       const show = {
         id: 'champ_' + d, type: 'sport', discipline: d, level: 5, champ: true,
         name: 'Championat ' + d + ' (Jahr ' + year + ')', prizePool: 90000,
-        entryFee: 0, travelCost: 0, energyCost: 20, minSkill: 0, minConf: 0, minEnergy: 0, minHealth: 0,
+        entryFee: 0, travelCost: 0, minSkill: 0, minConf: 0, minHealth: 0,
         fieldStrength: 80, entered: qs.map((h) => h.id), done: false,
       };
       const r = runShow(state, show);
@@ -898,7 +893,7 @@ const Economy = (function () {
       const show = {
         id: 'jchamp_' + d, type: 'sport', discipline: d, level: 4, champ: true, jung: true, year: year,
         name: 'Bundeschampionat der Jungpferde — ' + d + ' (Jahr ' + year + ')', prizePool: 42000,
-        entryFee: 0, travelCost: 0, energyCost: 12, minSkill: 0, minConf: 0, minEnergy: 0, minHealth: 0,
+        entryFee: 0, travelCost: 0, minSkill: 0, minConf: 0, minHealth: 0,
         fieldStrength: 62, entered: qs.map((h) => h.id), done: false,
       };
       const r = runShow(state, show);
