@@ -14,7 +14,14 @@ const Economy = (function () {
   // Gesundheit doppelt geprüft, siehe minHealth je Schau, und erlaubte
   // sonst beliebig viele gleichzeitige Nennungen desselben Pferds pro Woche,
   // ohne dass die sinkende Energie sich je auf die Turnierleistung auswirkte).
-  const TRAIN_ENERGY_COST = 10;
+  //
+  // 9 Punkte sind bei Standard-/Premiumfutter bewusst so bemessen, dass eine
+  // volle Trainingswoche (6/6, kein Ruhetag) in der Folgewoche NICHT mehr für
+  // volles 6/6-Training reicht (ein paar Einheiten werden übersprungen),
+  // während eine Woche mit mindestens 1 Ruhetag (5/6) genug Energie für ein
+  // volles 6/6-Training in der Folgewoche übrig lässt. Ruhetage werden damit
+  // spielerisch relevant, ohne Turniere zu blockieren (siehe oben).
+  const TRAIN_ENERGY_COST = 9;
 
   // --- Hengst-Absamung / Gefriersperma.
   const SEMEN_COST = 260;          // Labor-/Tierarztgebühr je Absamung
