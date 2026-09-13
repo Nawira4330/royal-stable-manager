@@ -927,31 +927,6 @@ const UI = (function () {
     return fcTable(rows);
   }
 
-  // Langfristiges Zuchtziel: eine Disziplin + Mindest-Potenzial, das ein
-  // Fohlen irgendwann erreichen soll, mit einmaliger Meilenstein-Prämie.
-  function breedingGoalCard(s) {
-    const g = s.breedingGoal;
-    if (g && !g.doneWeek) {
-      return `<div class="card stack">
-        <h3>🎯 Zuchtziel</h3>
-        <div class="row between"><span>${esc(g.disc)}-Potenzial ≥ ${g.target}</span><b>${fmt(g.reward)} + ${g.prestige} Prestige</b></div>
-        <div class="small muted">Gesetzt Woche ${g.setWeek}. Erfüllt sich automatisch, sobald ein neugeborenes Fohlen das Potenzial erreicht.</div>
-        <button class="small secondary" data-action="clear-goal">Ziel aufgeben</button>
-      </div>`;
-    }
-    const doneNote = g && g.doneWeek
-      ? `<p class="small tag good">🎉 Erreicht in Woche ${g.doneWeek} durch „${esc(g.foalName)}"!</p>` : '';
-    const opts = DISC.map((d) => '<option value="' + d + '">' + d + '</option>').join('');
-    return `<div class="card stack">
-      <h3>🎯 Zuchtziel</h3>
-      ${doneNote}
-      <p class="small muted">Ein langfristiges Ziel über mehrere Generationen setzen — die Prämie steigt mit dem Anspruch.</p>
-      <label class="small">Disziplin<select id="goal-disc">${opts}</select></label>
-      <label class="small">Mindest-Potenzial (60–99)<input type="number" id="goal-target" value="80" min="60" max="99"></label>
-      <button class="small" data-action="set-goal">Ziel setzen</button>
-    </div>`;
-  }
-
   views.zucht = function () {
     const s = Game.state;
     const stallions = s.horses.filter((h) => h.sex === 'hengst' && !h.offered && ageYears(h) >= Model.MATURITY_YEARS);
@@ -1130,10 +1105,7 @@ const UI = (function () {
         </div>
       </div>
 
-      <div class="grid cols-2" style="margin-top:1rem">
-        ${breedingGoalCard(s)}
-        ${pregHtml || '<div class="card"><h3>Tragende Stuten</h3><p class="small muted">Keine trächtige Stute gerade.</p></div>'}
-      </div>
+      ${pregHtml ? '<div style="margin-top:1rem">' + pregHtml + '</div>' : ''}
 
       ${semenBank.length ? '<div class="card" style="margin-top:1rem"><h3>🧊 Gefriersperma-Lager</h3>' +
         semenBank.map((x) => '<div class="row between"><span><b>' + esc(x.sireName) + '</b> <span class="muted small">' + esc(x.breed) +
@@ -1873,19 +1845,6 @@ const UI = (function () {
       return;
     }
 
-    if (a === 'set-goal') {
-      const disc = $('#goal-disc').value;
-      const target = parseInt($('#goal-target').value, 10);
-      const r = Game.setBreedingGoal(disc, target);
-      if (!r.ok) toast(r.msg, true); else toast('Zuchtziel gesetzt.');
-      render();
-      return;
-    }
-    if (a === 'clear-goal') {
-      Game.clearBreedingGoal();
-      render();
-      return;
-    }
 
     if (a === 'enter-show') {
       const sel = $('.enter-sel[data-show="' + el.dataset.show + '"]');

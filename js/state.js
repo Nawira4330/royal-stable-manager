@@ -55,7 +55,6 @@ const Game = (function () {
       market: [],
       studRoster: [],     // Deckstation: fremde Hengste gegen Gebühr
       semenBank: [],      // Gefriersperma-Lager { id, sireId, sireName, breed, snapshot, doses, collectedWeek }
-      breedingGoal: null, // Zuchtziel { disc, target, reward, prestige, setWeek, doneWeek, foalName }
       auction: { lots: [], nextWeek: 2 },
       shows: [],
       saleListings: [],   // { horseId, price, weeks }
@@ -135,7 +134,6 @@ const Game = (function () {
     if (!Array.isArray(state.market)) state.market = [];
     if (!Array.isArray(state.studRoster)) state.studRoster = [];
     if (!Array.isArray(state.semenBank)) state.semenBank = [];
-    if (state.breedingGoal === undefined) state.breedingGoal = null;
     if (state.nextMarketWeek == null) state.nextMarketWeek = state.week;
     if (state.nextShowWeek == null) state.nextShowWeek = state.week;
     if (state.nextStudWeek == null) state.nextStudWeek = state.week;
@@ -573,23 +571,6 @@ const Game = (function () {
   // Alt-API (einzelner Fokus) -> füllt den ganzen Plan.
   function setTrainingFocus(horseId, disc) {
     setTrainingPlan(horseId, disc ? [disc, disc, disc] : []);
-  }
-
-  // --- Zuchtziel: langfristiges Ziel über mehrere Generationen, mit
-  // Meilenstein-Prämie bei Erreichen (statt nur Hintergrundwachstum).
-  function setBreedingGoal(disc, target) {
-    if (DISC.indexOf(disc) === -1) return { ok: false, msg: 'Unbekannte Disziplin.' };
-    const t = clamp(Math.round(target), 60, 99);
-    const reward = clamp(Math.round((t - 50) * 400), 2000, 45000);
-    const prestige = clamp(Math.round((t - 50) * 0.6), 5, 60);
-    state.breedingGoal = { disc: disc, target: t, reward: reward, prestige: prestige, setWeek: state.week, doneWeek: null, foalName: null };
-    log('🎯 Neues Zuchtziel: ' + disc + '-Potenzial ≥ ' + t + ' bei einem Fohlen — Prämie ' + Economy.fmtEur(reward) + ' + ' + prestige + ' Prestige.', 'info');
-    save(); emit();
-    return { ok: true };
-  }
-  function clearBreedingGoal() {
-    state.breedingGoal = null;
-    save(); emit();
   }
 
   function setAufzuchtPlan(horseId, plan) {
@@ -1552,16 +1533,6 @@ const Game = (function () {
       foal.name = foalName();
       if (coBreedTag) foal.coBred = coBreedTag;
       state.stats.foalsBred += 1;
-      // Zuchtziel erreicht?
-      if (state.breedingGoal && !state.breedingGoal.doneWeek && foal.potential[state.breedingGoal.disc] >= state.breedingGoal.target) {
-        const g = state.breedingGoal;
-        state.cash += g.reward;
-        state.prestige += g.prestige;
-        g.doneWeek = state.week;
-        g.foalName = foal.name;
-        log('🎯 Zuchtziel erreicht! „' + foal.name + '" hat ' + g.disc + '-Potenzial ' + Math.round(foal.potential[g.disc]) +
-          ' (Ziel ' + g.target + ') — +' + Economy.fmtEur(g.reward) + ', +' + g.prestige + ' Prestige.', 'good');
-      }
       // Vererber-Rating fortschreiben (nur solange die Eltern im Stall sind).
       const sireHerd = sire && sire.id ? getHorse(sire.id) : null;
       [sireHerd, dam].forEach((p) => { if (p && p.foalsBred != null) { p.foalsBred += 1; p.foalQualSum = (p.foalQualSum || 0) + foal.quality; } });
@@ -2053,8 +2024,6 @@ const Game = (function () {
     setTrainingFocus: setTrainingFocus,
     setTrainingPlan: setTrainingPlan,
     setAufzuchtPlan: setAufzuchtPlan,
-    setBreedingGoal: setBreedingGoal,
-    clearBreedingGoal: clearBreedingGoal,
     applyPlanToAll: applyPlanToAll,
     takeLoan: takeLoan,
     repayLoan: repayLoan,
