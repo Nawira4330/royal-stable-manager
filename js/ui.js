@@ -144,6 +144,26 @@ const UI = (function () {
   const views = {};
 
   // --- 🏡 Gestüt --------------------------------------------------------
+  // Fortschritt zum nächsten Gestüts-Rang: Prestige UND ein Kriterien-
+  // Katalog (Bestand, Siege, Zucht, Zuchtbuch, Staatsprämien, Championat).
+  function rankProgressCard(s) {
+    const tp = Economy.tierProgress(s);
+    if (!tp.next) {
+      return `<div class="card stack"><h3>🏅 Rang</h3>
+        <div class="row between"><span>${esc(tp.current.name)}</span><span class="stars">${'★'.repeat(tp.current.stars)}</span></div>
+        <p class="small muted">Höchster Rang erreicht.</p></div>`;
+    }
+    const rows = tp.missing.length
+      ? tp.missing.map((m) => '<div class="row between small"><span>' + esc(m.label) + '</span><b>' + m.have + ' / ' + m.need + '</b></div>').join('')
+      : '<p class="small tag good">Alle Bedingungen erfüllt — der nächste Rang greift automatisch.</p>';
+    return `<div class="card stack">
+      <h3>🏅 Rang</h3>
+      <div class="row between"><span>${esc(tp.current.name)}</span><span class="stars">${'★'.repeat(tp.current.stars)}</span></div>
+      <div class="small muted">Nächste Stufe: <b>${esc(tp.next.name)}</b> ${'★'.repeat(tp.next.stars)} — braucht ALLE dieser Bedingungen:</div>
+      ${rows}
+    </div>`;
+  }
+
   views.gestüt = function () {
     const s = Game.state;
     const tier = Economy.prestigeTier(s);
@@ -200,6 +220,8 @@ const UI = (function () {
           <div class="table-wrap"><table><tbody>${facHtml}</tbody></table></div>
         </div>
       </div>
+
+      <div style="margin-top:1rem">${rankProgressCard(s)}</div>
 
       <div class="grid cols-2" style="margin-top:1rem">
         ${bankCard(s)}

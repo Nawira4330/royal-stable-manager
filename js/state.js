@@ -81,7 +81,8 @@ const Game = (function () {
       seasonYear: 1,
       championHistory: [],
       jungChampHistory: [],
-      stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0, bestSale: null, biggestWin: 0 },
+      stats: { foalsBred: 0, horsesSold: 0, showWins: 0, totalEarnings: 0, bestSale: null, biggestWin: 0,
+        zuchtbuchCount: 0, zuchtbuchICount: 0, staatspraemieCount: 0 },
     };
 
     // Startbestand: 1 Hengst, 3 Stuten. Rasse & 2 Schwerpunkt-Disziplinen
@@ -161,7 +162,8 @@ const Game = (function () {
     if (state.boarding == null) state.boarding = 0;
     if (state.lastSeasonIdx == null) state.lastSeasonIdx = Economy.season(state.week).idx;
     if (!state.stats || typeof state.stats !== 'object') state.stats = {};
-    ['foalsBred', 'horsesSold', 'showWins', 'totalEarnings', 'biggestWin', 'insuranceClaims'].forEach((k) => {
+    ['foalsBred', 'horsesSold', 'showWins', 'totalEarnings', 'biggestWin', 'insuranceClaims',
+      'zuchtbuchCount', 'zuchtbuchICount', 'staatspraemieCount'].forEach((k) => {
       if (typeof state.stats[k] !== 'number' || !isFinite(state.stats[k])) state.stats[k] = 0;
     });
     if (state.stats.bestSale === undefined) state.stats.bestSale = null;
@@ -1343,6 +1345,7 @@ const Game = (function () {
     // wie im echten Zuchtwesen (Hengstleistungsprüfung nach der Körung).
     if (index >= 80 && h.sex === 'hengst' && h.zuchtzulassung === 'vorläufig gekört (Zuchtbuch II)') {
       h.zuchtzulassung = 'gekört, Zuchtbuch I';
+      state.stats.zuchtbuchICount = (state.stats.zuchtbuchICount || 0) + 1;
       log('📜 ' + h.name + ' rückt mit bestandener Leistungsprüfung ins Zuchtbuch I auf (gekört, Zuchtbuch I).', 'good');
     }
   }
@@ -1804,7 +1807,7 @@ const Game = (function () {
     }
 
     // 9) Prestige-Zerfall + Bankrott-Warnung + Verlaufs-Stichprobe.
-    state.prestige = Math.max(0, state.prestige - 0.5);
+    state.prestige = Math.max(0, state.prestige - 1);
     if (state.cash < 0) {
       log('⚠️ Dein Konto ist im Minus (' + Economy.fmtEur(state.cash) + '). Verkaufe Pferde oder nimm einen Kredit auf.', 'warn');
     }

@@ -215,16 +215,70 @@ const Economy = (function () {
   const VETROUTINE_EVERY = 13, VETROUTINE_COST = 95;
 
   function prestigeMult(state) {
-    // Prestige 0..1000 -> Preis-/Wert-Multiplikator ~0.9..1.6
-    return 0.9 + clamp(state.prestige / 1000, 0, 1) * 0.7;
+    // Prestige 0..2000 -> Preis-/Wert-Multiplikator ~0.9..1.6
+    return 0.9 + clamp(state.prestige / 2000, 0, 1) * 0.7;
+  }
+
+  // --- Gestüts-Rang: nicht mehr nur eine Prestige-Zahl, sondern Prestige
+  // UND ein Kriterien-Katalog je Stufe (Bestand, Turniersiege, gezüchtete
+  // Fohlen, Zuchtbuch-Stand, Staatsprämien, Championtitel). Erst wenn ALLE
+  // Bedingungen einer Stufe erfüllt sind, gilt sie als erreicht - reines
+  // Prestige-Farmen reicht nicht mehr. Felder ohne Eintrag = keine Vorgabe.
+  const TIER_REQS = [
+    { name: 'Kleiner Hof', stars: 1, prestige: 0 },
+    { name: 'Aufstrebendes Gestüt', stars: 2, prestige: 150, horses: 4, wins: 4 },
+    { name: 'Etabliertes Gestüt', stars: 3, prestige: 500, horses: 8, wins: 15, foalsBred: 6, zuchtbuch: 1 },
+    { name: 'Renommiertes Gestüt', stars: 4, prestige: 1200, horses: 14, wins: 35, foalsBred: 18, staatspraemie: 1, zuchtbuchI: 1 },
+    { name: 'Elite-Gestüt', stars: 5, prestige: 2400, horses: 20, wins: 70, foalsBred: 40, staatspraemie: 3, championTitle: 1 },
+  ];
+  // Anzeige-/Erklärtext je Bedingungs-Schlüssel (für die "nächster Rang"-Liste).
+  const TIER_REQ_LABELS = {
+    prestige: 'Prestige', horses: 'Pferde im Stall', wins: 'Turniersiege gesamt (alle Schau-Arten, Lebenszeit)',
+    foalsBred: 'gezüchtete Fohlen gesamt (Lebenszeit)', zuchtbuch: 'Pferde je mind. Zuchtbuch II erreicht (Lebenszeit)',
+    zuchtbuchI: 'Pferde je Zuchtbuch I erreicht (Lebenszeit)', staatspraemie: 'Pferde je Staatsprämie erreicht (Lebenszeit)',
+    championTitle: 'Jahres-Championat als Gesamtsieger gewonnen',
+  };
+  function tierMetrics(state) {
+    const horses = state.horses || [];
+    const stats = state.stats || {};
+    // Zuchtbuch/Staatsprämie zählen als Lebenszeit-Erfolge (state.stats.*),
+    // nicht am aktuellen Bestand - sonst könnte ein Rang sinken, nur weil
+    // ein altes Zuchtbuch-Pferd stirbt oder verkauft wird.
+    return {
+      prestige: Math.round(state.prestige),
+      horses: horses.length,
+      wins: stats.showWins || 0,
+      foalsBred: stats.foalsBred || 0,
+      zuchtbuch: stats.zuchtbuchCount || 0,
+      zuchtbuchI: stats.zuchtbuchICount || 0,
+      staatspraemie: stats.staatspraemieCount || 0,
+      championTitle: (state.championHistory || []).some((c) => c.overall === state.studName) ? 1 : 0,
+    };
+  }
+  function meetsTierReq(metrics, req) {
+    return Object.keys(req).every((k) => (k === 'name' || k === 'stars') || (metrics[k] || 0) >= req[k]);
   }
   function prestigeTier(state) {
-    const p = state.prestige;
-    if (p >= 800) return { name: 'Elite-Gestüt', stars: 5 };
-    if (p >= 450) return { name: 'Renommiertes Gestüt', stars: 4 };
-    if (p >= 220) return { name: 'Etabliertes Gestüt', stars: 3 };
-    if (p >= 80) return { name: 'Aufstrebendes Gestüt', stars: 2 };
-    return { name: 'Kleiner Hof', stars: 1 };
+    const metrics = tierMetrics(state);
+    let best = TIER_REQS[0];
+    for (let i = 0; i < TIER_REQS.length; i++) {
+      if (meetsTierReq(metrics, TIER_REQS[i])) best = TIER_REQS[i]; else break;
+    }
+    return best;
+  }
+  // Für die UI: aktueller Rang, Metriken und die (fehlenden) Bedingungen für
+  // den nächsten Rang.
+  function tierProgress(state) {
+    const metrics = tierMetrics(state);
+    const current = prestigeTier(state);
+    const idx = TIER_REQS.findIndex((t) => t.stars === current.stars);
+    const next = TIER_REQS[idx + 1] || null;
+    let missing = [];
+    if (next) {
+      missing = Object.keys(next).filter((k) => k !== 'name' && k !== 'stars' && (metrics[k] || 0) < next[k])
+        .map((k) => ({ key: k, label: TIER_REQ_LABELS[k] || k, have: metrics[k] || 0, need: next[k] }));
+    }
+    return { current: current, next: next, metrics: metrics, missing: missing };
   }
 
   // --- Angebot & Nachfrage -------------------------------------------------
@@ -862,9 +916,9 @@ const Economy = (function () {
         travelCost += show.travelCost || 0;
         h.earnings += prize;
         h.shows += 1;
-        if (place === 1) { h.wins += 1; prestigeGain += 6 + show.level * 4; }
-        else if (place <= 3) prestigeGain += 3 + show.level * 2;
-        else if (place <= 5) prestigeGain += 1 + show.level;
+        if (place === 1) { h.wins += 1; prestigeGain += 3 + show.level * 2; }
+        else if (place <= 3) prestigeGain += 1.5 + show.level;
+        else if (place <= 5) prestigeGain += 0.5 + show.level * 0.5;
         if (!show.champ && show.type === 'sport' && pts) {
           h.turnierPunkte = h.turnierPunkte || {}; h.turnierPunkte[key] = (h.turnierPunkte[key] || 0) + pts;
           if (show.youngster) { h.jungPunkte = h.jungPunkte || {}; h.jungPunkte[key] = (h.jungPunkte[key] || 0) + pts; }
@@ -886,9 +940,14 @@ const Economy = (function () {
         if (show.type === 'koerung') {
           const passLine = Math.ceil(field.length * 0.6);
           const status = lpPassed(h) ? 'gekört, Zuchtbuch I' : 'vorläufig gekört (Zuchtbuch II)';
-          if (place <= passLine && approvalRank(status) > approvalRank(h.zuchtzulassung)) {
+          const priorRank = approvalRank(h.zuchtzulassung);
+          if (place <= passLine && approvalRank(status) > priorRank) {
             h.zuchtzulassung = status;
             results[results.length - 1].note = status;
+            // Lebenszeit-Zähler fürs Rang-System (bleiben, auch wenn das
+            // Pferd später stirbt/verkauft wird - siehe tierMetrics).
+            if (priorRank < 2) state.stats.zuchtbuchCount = (state.stats.zuchtbuchCount || 0) + 1;
+            if (approvalRank(status) >= 3) state.stats.zuchtbuchICount = (state.stats.zuchtbuchICount || 0) + 1;
           } else if (place > passLine && !h.zuchtzulassung) {
             results[results.length - 1].note = 'nicht zugelassen';
           }
@@ -902,9 +961,12 @@ const Economy = (function () {
         if (show.type === 'praemierung') {
           const passLine = Math.ceil(field.length * 0.6);
           const status = 'eingetragen, ' + (lpPassed(h) ? 'Zuchtbuch I' : 'Zuchtbuch II');
-          if (place <= passLine && approvalRank(status) > approvalRank(h.zuchtzulassung)) {
+          const priorRank = approvalRank(h.zuchtzulassung);
+          if (place <= passLine && approvalRank(status) > priorRank) {
             h.zuchtzulassung = status;
             results[results.length - 1].note = status;
+            if (priorRank < 2) state.stats.zuchtbuchCount = (state.stats.zuchtbuchCount || 0) + 1;
+            if (approvalRank(status) >= 3) state.stats.zuchtbuchICount = (state.stats.zuchtbuchICount || 0) + 1;
           } else if (place > passLine && !h.zuchtzulassung) {
             results[results.length - 1].note = 'nicht zugelassen';
           }
@@ -915,6 +977,7 @@ const Economy = (function () {
           if (pr && praemieRank(pr) > praemieRank(h.praemie)) {
             h.praemie = pr;
             results[results.length - 1].note = (results[results.length - 1].note ? results[results.length - 1].note + ' · ' : '') + pr;
+            if (pr === 'Staatsprämie') state.stats.staatspraemieCount = (state.stats.staatspraemieCount || 0) + 1;
           }
           if (place === 1) h.titel = 'Siegerstute';
         }
@@ -976,7 +1039,7 @@ const Economy = (function () {
     const standings = seasonStandings(state);
     const champ = standings[0];
     summary.overall = champ ? champ.name : null;
-    if (champ && champ.isPlayer) { state.prestige += 60; summary.playerPrestige += 60; }
+    if (champ && champ.isPlayer) { state.prestige += 30; summary.playerPrestige += 30; }
 
     state.championHistory = state.championHistory || [];
     state.championHistory.unshift({ year: year, overall: summary.overall, disciplines: summary.disciplines });
@@ -1195,6 +1258,9 @@ const Economy = (function () {
     weeklyFeedCost: weeklyFeedCost,
     prestigeMult: prestigeMult,
     prestigeTier: prestigeTier,
+    tierProgress: tierProgress,
+    tierMetrics: tierMetrics,
+    TIER_REQS: TIER_REQS,
     maxLoan: maxLoan,
     LOAN_RATE: LOAN_RATE,
     FARRIER_EVERY: FARRIER_EVERY, FARRIER_COST: FARRIER_COST,
