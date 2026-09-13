@@ -524,13 +524,20 @@ const Economy = (function () {
     Fahren: ['Fahren E', 'Fahren A', 'Fahren L', 'Fahren M', 'Fahren S'],
   };
   const ZUCHT_CLASS_NAMES = ['Ortsschau', 'Bezirksschau', 'Landesschau', 'Elite-Stutenschau', 'Bundeschampionat'];
+  // Körung (nur Hengste, Zuchtzulassung/Lizenzierung) und Prämierung/
+  // Stutenschau (nur Stuten, Zuchtbucheintragung + Prämienstufe) sind im
+  // echten Zuchtwesen getrennte Vorgänge mit getrennten Namen/Klassen.
   const KOER_CLASS_NAMES = ['Vorauswahl', 'Bezirkskörung', 'Landeskörung', 'Elitekörung', 'Bundeskörung'];
+  const PRAEM_CLASS_NAMES = ['Stutenschau', 'Bezirks-Stutenschau', 'Landes-Stutenschau', 'Elite-Stutenschau', 'Staatsprämien-Schau'];
   const SPORT_MIN_SKILL = [0, 18, 35, 52, 70];
   const ZUCHT_MIN_CONF = [0, 48, 60, 70, 80];
   const KOER_MIN_CONF = [0, 55, 63, 71, 78];
 
-  // Rang der Zuchtzulassung: 0 keine · 1 Zuchtbuch II · 2 gekört/eingetragen
-  // (Zuchtbuch II) · 3 Zuchtbuch I (mit bestandener Leistungsprüfung).
+  // Rang der Zuchtzulassung: 0 keine · 1 Vorbuch/ohne · 2 (vorläufig) gekört
+  // bzw. eingetragen, Zuchtbuch II · 3 gekört/eingetragen, Zuchtbuch I (mit
+  // bestandener Leistungsprüfung). "vorläufig gekört" (Hengst ohne LP) zählt
+  // hier bewusst wie "gekört", weil er schon decken darf - nur eben noch
+  // nicht im höchsten Zuchtbuch steht.
   function approvalRank(s) {
     if (!s) return 0;
     if (/Zuchtbuch I\b/.test(s)) return 3;
@@ -556,9 +563,13 @@ const Economy = (function () {
     for (let i = 0; i < nZ; i++) {
       shows.push(makeShow('zucht', null, clamp(Model.randInt(1, tier + 1), 1, 5), false));
     }
-    // Körung / Prämierung: nicht in jedem Kalender.
-    if (Math.random() < 0.6) {
+    // Körung (nur Hengste) und Prämierung/Stutenschau (nur Stuten): getrennte
+    // Termine, nicht in jedem Kalender.
+    if (Math.random() < 0.35) {
       shows.push(makeShow('koerung', null, clamp(Model.randInt(2, tier + 2), 2, 5), false));
+    }
+    if (Math.random() < 0.35) {
+      shows.push(makeShow('praemierung', null, clamp(Model.randInt(2, tier + 2), 2, 5), false));
     }
     // Fohlenschau: für 0-3-Jährige, bewertet Exterieur/Interieur/Typ statt
     // Turnierdisziplinen - eigener Auftritt für den Aufzuchtplan.
@@ -585,9 +596,11 @@ const Economy = (function () {
 
   function makeShow(type, disc, level, youngster) {
     const pool = [1500, 4000, 9000, 20000, 45000][level - 1];
+    const isZulassung = type === 'koerung' || type === 'praemierung';
     let baseName;
     if (type === 'zucht') baseName = ZUCHT_CLASS_NAMES[level - 1];
-    else if (type === 'koerung') baseName = 'Körung / Prämierung — ' + KOER_CLASS_NAMES[level - 1];
+    else if (type === 'koerung') baseName = 'Körung — ' + KOER_CLASS_NAMES[level - 1];
+    else if (type === 'praemierung') baseName = 'Prämierung — ' + PRAEM_CLASS_NAMES[level - 1];
     else baseName = (CLASS_NAMES[disc] ? CLASS_NAMES[disc][level - 1] : disc + ' ' + level);
     return {
       id: 'show_' + Math.random().toString(36).slice(2, 8),
@@ -596,12 +609,12 @@ const Economy = (function () {
       level: level,
       youngster: !!youngster,
       name: baseName + (youngster ? ' (Jungpferde)' : ''),
-      entryFee: type === 'koerung' ? Math.round(pool * 0.06) : Math.round(pool * 0.03),
+      entryFee: isZulassung ? Math.round(pool * 0.06) : Math.round(pool * 0.03),
       travelCost: Math.round(pool * 0.012) + 60 * level,
       minSkill: type === 'sport' ? SPORT_MIN_SKILL[level - 1] : 0,
-      minConf: type === 'zucht' ? ZUCHT_MIN_CONF[level - 1] : (type === 'koerung' ? KOER_MIN_CONF[level - 1] : 0),
-      minHealth: type === 'koerung' ? 50 : 55,
-      prizePool: type === 'koerung' ? Math.round(pool * 0.35) : pool,
+      minConf: type === 'zucht' ? ZUCHT_MIN_CONF[level - 1] : (isZulassung ? KOER_MIN_CONF[level - 1] : 0),
+      minHealth: isZulassung ? 50 : 55,
+      prizePool: isZulassung ? Math.round(pool * 0.35) : pool,
       fieldStrength: 30 + level * 12,
       entered: [],
       done: false,
@@ -627,21 +640,31 @@ const Economy = (function () {
       return 'Nicht qualifiziert: ' + show.discipline + ' ' + Math.round(horse.skill[show.discipline]) +
         ' < geforderte ' + show.minSkill + '.';
     }
-    if ((show.type === 'zucht' || show.type === 'koerung')) {
-      if (horse.noPapers || horse.isMix) return 'Ohne Zuchtbucheintrag (Vater nicht gekört) — keine Zuchtschau/Körung.';
+    // Körung ist nur für Hengste (Zuchtzulassung/Lizenzierung), Prämierung/
+    // Stutenschau nur für Stuten (Zuchtbucheintragung + Prämienstufe) - das
+    // sind im echten Zuchtwesen getrennte Vorgänge für je ein Geschlecht.
+    if (show.type === 'koerung' && horse.sex !== 'hengst') return 'Körung ist nur für Hengste — Stuten gehen zur Prämierung/Stutenschau.';
+    if (show.type === 'praemierung' && horse.sex !== 'stute') return 'Prämierung/Stutenschau ist nur für Stuten — Hengste gehen zur Körung.';
+    if ((show.type === 'zucht' || show.type === 'koerung' || show.type === 'praemierung')) {
+      if (horse.noPapers || horse.isMix) return 'Ohne Zuchtbucheintrag (Vater nicht gekört) — keine Zuchtschau/Körung/Prämierung.';
       if (horse.conformation < show.minConf) return 'Exterieur ' + Math.round(horse.conformation) + ' < geforderte ' + show.minConf + '.';
     }
-    // Körung/Prämierung bringt nur etwas, solange sich Zuchtzulassung oder
-    // Prämie noch verbessern können - sonst ließe sich dieselbe Körung immer
-    // wieder für Preisgeld/Prestige "farmen", ohne dass sich am Status etwas
-    // ändert.
+    // Körung/Prämierung bringt nur etwas, solange sich Zuchtzulassung (bzw.
+    // bei Stuten zusätzlich die Prämie) noch verbessern kann - sonst ließe
+    // sich derselbe Termin immer wieder für Preisgeld/Prestige "farmen",
+    // ohne dass sich am Status etwas ändert.
     if (show.type === 'koerung') {
-      const bestBuch = lpPassed(horse) ? 'Zuchtbuch I' : 'Zuchtbuch II';
-      const bestStatus = (horse.sex === 'hengst' ? 'gekört, ' : 'eingetragen, ') + bestBuch;
+      const bestStatus = lpPassed(horse) ? 'gekört, Zuchtbuch I' : 'vorläufig gekört (Zuchtbuch II)';
+      if (approvalRank(bestStatus) <= approvalRank(horse.zuchtzulassung)) {
+        return horse.name + ' ist bereits ' + (horse.zuchtzulassung || 'nicht zugelassen') + ' — eine erneute Körung bringt nichts mehr.';
+      }
+    }
+    if (show.type === 'praemierung') {
+      const bestStatus = 'eingetragen, ' + (lpPassed(horse) ? 'Zuchtbuch I' : 'Zuchtbuch II');
       const canImproveApproval = approvalRank(bestStatus) > approvalRank(horse.zuchtzulassung);
       const canImprovePraemie = praemieRank('Staatsprämie') > praemieRank(horse.praemie);
       if (!canImproveApproval && !canImprovePraemie) {
-        return horse.name + ' hat bereits die bestmögliche Körung/Prämierung erreicht (' +
+        return horse.name + ' hat bereits die bestmögliche Zuchtbucheintragung/Prämie erreicht (' +
           (horse.zuchtzulassung || 'ohne Zuchtzulassung') + ', ' + (horse.praemie || 'keine Prämie') + ') — erneute Anmeldung bringt nichts mehr.';
       }
     }
@@ -651,7 +674,7 @@ const Economy = (function () {
 
   // Disziplin-gerechte Darstellung der Wertung.
   function showScoreLabel(show, rawScore, leaderScore) {
-    if (show.type === 'zucht' || show.type === 'koerung' || show.type === 'fohlen') return clamp(5 + rawScore / 18, 3, 10).toFixed(1) + '/10';
+    if (show.type === 'zucht' || show.type === 'koerung' || show.type === 'praemierung' || show.type === 'fohlen') return clamp(5 + rawScore / 18, 3, 10).toFixed(1) + '/10';
     switch (show.discipline) {
       case 'Dressur':
       case 'Fahren':
@@ -719,15 +742,19 @@ const Economy = (function () {
         + fit + tempBonus + healthBonus
         + form * 0.16;
     }
-    // Zuchtschau / Körung: Exterieur + Typ + Abstammung + Leistungsprüfung.
+    // Zuchtschau / Körung / Prämierung: Exterieur + Typ + Abstammung +
+    // Leistungsprüfung. Körung und Prämierung sind die "offiziellen"
+    // Zulassungstermine und wiegen Exterieur/Leistungsprüfung strenger als
+    // eine gewöhnliche Zuchtschau.
+    const zulassung = show.type === 'koerung' || show.type === 'praemierung';
     const bdef = Model.breedDef(horse.breed);
     const typeBonus = (horse.conformation - bdef.conf) * 0.2;
     const pedigreeBonus = (horse.sireName ? 4 : 0) + (horse.damName ? 4 : 0) + horse.wins * 1.5
       + praemieRank(horse.praemie) * 3;
     const rarity = Genetics.describe(horse.genotype, y).rarity * 10;
     const mixMalus = (horse.isMix || Model.isMixBreed(horse.breed)) ? 20 : 0;
-    const lpBonus = horse.leistungspruefung ? (horse.leistungspruefung.index - 55) * (show.type === 'koerung' ? 0.28 : 0.14) : 0;
-    return horse.conformation * (show.type === 'koerung' ? 0.55 : 0.66)
+    const lpBonus = horse.leistungspruefung ? (horse.leistungspruefung.index - 55) * (zulassung ? 0.28 : 0.14) : 0;
+    return horse.conformation * (zulassung ? 0.55 : 0.66)
       + typeBonus + pedigreeBonus + rarity - mixMalus + lpBonus
       + tempBonus + healthBonus * 0.5
       + form * 0.13;
@@ -851,11 +878,30 @@ const Economy = (function () {
           h.praemie = 'Ib-Prämie';
           results[results.length - 1].note = 'Ib-Prämie';
         }
-        // Körung / Prämierung: Zuchtzulassung + Prämie + evtl. Siegertitel.
+        // Körung (nur Hengste): reine Zuchtzulassung, keine Prämienstufen -
+        // die gibt es im echten Zuchtwesen nur für Stuten. Ohne bestandene
+        // Leistungsprüfung wird ein Hengst nur "vorläufig gekört" (Zuchtbuch
+        // II); die Leistungsprüfung hebt ihn automatisch auf Zuchtbuch I
+        // (siehe finishPerformanceTest), keine erneute Körung nötig.
         if (show.type === 'koerung') {
           const passLine = Math.ceil(field.length * 0.6);
-          const buch = lpPassed(h) ? 'Zuchtbuch I' : 'Zuchtbuch II';
-          const status = (h.sex === 'hengst' ? 'gekört, ' : 'eingetragen, ') + buch;
+          const status = lpPassed(h) ? 'gekört, Zuchtbuch I' : 'vorläufig gekört (Zuchtbuch II)';
+          if (place <= passLine && approvalRank(status) > approvalRank(h.zuchtzulassung)) {
+            h.zuchtzulassung = status;
+            results[results.length - 1].note = status;
+          } else if (place > passLine && !h.zuchtzulassung) {
+            results[results.length - 1].note = 'nicht zugelassen';
+          }
+          if (place === 1) {
+            h.titel = 'Kör-Sieger';
+            results[results.length - 1].note = (results[results.length - 1].note ? results[results.length - 1].note + ' · ' : '') + h.titel;
+          }
+        }
+        // Prämierung/Stutenschau (nur Stuten): Zuchtbucheintragung + eine
+        // von drei Prämienstufen (Ib < Ia < Staatsprämie).
+        if (show.type === 'praemierung') {
+          const passLine = Math.ceil(field.length * 0.6);
+          const status = 'eingetragen, ' + (lpPassed(h) ? 'Zuchtbuch I' : 'Zuchtbuch II');
           if (place <= passLine && approvalRank(status) > approvalRank(h.zuchtzulassung)) {
             h.zuchtzulassung = status;
             results[results.length - 1].note = status;
@@ -870,7 +916,7 @@ const Economy = (function () {
             h.praemie = pr;
             results[results.length - 1].note = (results[results.length - 1].note ? results[results.length - 1].note + ' · ' : '') + pr;
           }
-          if (place === 1) h.titel = h.sex === 'hengst' ? 'Siegerhengst' : 'Siegerstute';
+          if (place === 1) h.titel = 'Siegerstute';
         }
         // Bundeschampionat der Jungpferde: Siegertitel.
         if (show.jung && place === 1) {

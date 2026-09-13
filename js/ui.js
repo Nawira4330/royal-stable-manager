@@ -59,15 +59,33 @@ const UI = (function () {
   }
 
   // Zucht-/Prämierungs-Badges.
+  // Erklärtext je Zuchtzulassungs-Status (für Tooltip auf dem Badge).
+  function zuchtzulassungTip(s) {
+    if (!s) return '';
+    if (/Zuchtbuch I\b/.test(s)) return 'Höchste Zuchtbuchklasse (Zuchtbuch I) — mit bestandener Leistungsprüfung (LP).';
+    if (/vorläufig gekört/.test(s)) return 'Hengst ist zur Zucht zugelassen (darf decken), aber ohne bestandene Leistungsprüfung (LP) noch nicht im höchsten Zuchtbuch — das holt er automatisch nach, sobald er die LP besteht.';
+    if (/Zuchtbuch II/.test(s)) return 'Zuchtbuch II — die niedrigere von zwei Zuchtbuchklassen (Zuchtbuch I ist die höhere, braucht eine bestandene Leistungsprüfung).';
+    return '';
+  }
+  const PRAEMIE_TIP = {
+    'Ib-Prämie': 'Prämienstufe 1 von 3 (niedrigste) — vergeben bei Zuchtschau/Prämierung.',
+    'Ia-Prämie': 'Prämienstufe 2 von 3 — bessere Platzierung bei einer Prämierung/Stutenschau.',
+    'Staatsprämie': 'Prämienstufe 3 von 3 (höchste) — Siegerin einer Prämierung mit bestandener Leistungsprüfung (LP).',
+  };
+  const TITEL_TIP = {
+    'Kör-Sieger': 'Bester Hengst seiner Körung (Zuchtzulassungs-Prüfung).',
+    'Siegerstute': 'Beste Stute ihrer Prämierung/Stutenschau.',
+    'Fohlenschausieger': 'Bestes Fohlen/Jungpferd seiner Fohlenschau.',
+  };
   function zuchtBadges(h) {
     const b = [];
-    if (h.noPapers || Model.isMixBreed(h.breed)) b.push('<span class="tag warn">ohne Zuchtbucheintrag</span>');
-    else if (h.zuchtzulassung) b.push('<span class="tag good">' + esc(h.zuchtzulassung) + '</span>');
-    if (h.titel) b.push('<span class="tag rare">' + esc(h.titel) + '</span>');
-    if (h.praemie) b.push('<span class="tag rare">' + esc(h.praemie) + '</span>');
+    if (h.noPapers || Model.isMixBreed(h.breed)) b.push('<span class="tag warn" title="Vater war beim Decken nicht (mindestens vorläufig) gekört — Fohlen ohne Zuchtbucheintrag, deutlicher Wertabschlag.">ohne Zuchtbucheintrag</span>');
+    else if (h.zuchtzulassung) b.push('<span class="tag good" title="' + esc(zuchtzulassungTip(h.zuchtzulassung)) + '">' + esc(h.zuchtzulassung) + '</span>');
+    if (h.titel) b.push('<span class="tag rare" title="' + esc(TITEL_TIP[h.titel] || 'Turnier-/Zuchtschau-Titel.') + '">' + esc(h.titel) + '</span>');
+    if (h.praemie) b.push('<span class="tag rare" title="' + esc(PRAEMIE_TIP[h.praemie] || '') + '">' + esc(h.praemie) + '</span>');
     if (h.leistungspruefung) {
       const idx = h.leistungspruefung.index;
-      b.push('<span class="tag ' + (idx >= 80 ? 'good' : 'warn') + '">LP-Index ' + idx + '</span>');
+      b.push('<span class="tag ' + (idx >= 80 ? 'good' : 'warn') + '" title="Leistungsprüfung (LP): Stationsprüfung über Grundgangarten, Rittigkeit, Springen und Charakter. Ab Index 80 bestanden — Voraussetzung fürs Zuchtbuch I.">LP-Index ' + idx + '</span>');
     }
     const br = Model.breederRating(h);
     if (br) b.push('<span class="tag rare" title="Ø Fohlenqualität ' + br.avg.toFixed(2) + ' aus ' + br.count + ' Fohlen">Vererber ' + '★'.repeat(br.stars) + '</span>');
@@ -794,7 +812,7 @@ const UI = (function () {
           ${adult ? '<button class="small secondary" data-action="make-challenge" data-id="' + h.id + '">⚔ Turnier-Challenge (Code)</button>' : ''}
         </div>
         ${h.sex === 'hengst' && adult && (Model.approvalRank(h.zuchtzulassung) >= 2 || h.studService) ? studServiceBlock(h)
-          : (h.sex === 'hengst' && adult ? '<div class="small muted">🐴 Eigene Deckstation für fremde Zuchtstuten: erst nach Körung/Eintragung möglich.</div>' : '')}
+          : (h.sex === 'hengst' && adult ? '<div class="small muted">🐴 Eigene Deckstation für fremde Zuchtstuten: erst ab (mindestens vorläufiger) Körung möglich (Tab Schauen).</div>' : '')}
         ${h.sex === 'hengst' && adult ? semenBlock(h) : ''}
         `}
         <div class="small muted">Schätzwert <b>${fmt(Game.valuation(h))}</b> · Marktlage ${demandTag(h)} → aktuell <b>${fmt(Game.marketPrice(h))}</b></div>
@@ -861,7 +879,7 @@ const UI = (function () {
     if (y >= Model.MATURITY_YEARS && y <= 9 && !h.offered && !h.pregnancy) {
       return '<div class="row"><button class="small secondary" data-action="start-lp" data-id="' + h.id +
         '">🎓 Zur Leistungsprüfung (4.200 €, 6 Wochen)</button></div>' +
-        '<div class="small muted">Bestandene Prüfung (Index ≥ 80) ist Voraussetzung fürs Zuchtbuch I bei der Körung.</div>';
+        '<div class="small muted">Bestandene Prüfung (Index ≥ 80) ist Voraussetzung fürs Zuchtbuch I — bei Hengsten über die Körung, bei Stuten über die Prämierung/Stutenschau.</div>';
     }
     return '';
   }
@@ -1141,6 +1159,15 @@ const UI = (function () {
       </div>`;
   };
 
+  // Kurzerklärung je Schau-Art (wird direkt auf der Karte angezeigt).
+  function showTypeExplainer(type) {
+    if (type === 'koerung') return 'Körung = Zuchtzulassung für Hengste. Ohne bestandene Leistungsprüfung (LP) zunächst nur "vorläufig gekört" (Zuchtbuch II); mit bestandener LP automatisch Zuchtbuch I — keine zweite Körung nötig.';
+    if (type === 'praemierung') return 'Prämierung/Stutenschau = Zuchtbucheintragung für Stuten (Zuchtbuch I/II) plus eine Prämienstufe (Ib- < Ia- < Staatsprämie) je nach Platzierung.';
+    if (type === 'zucht') return 'Allgemeine Zuchtschau, offen für Hengste und Stuten. Die besten 3 bekommen mindestens eine Ib-Prämie.';
+    if (type === 'fohlen') return 'Fohlenschau für 0–3-Jährige: bewertet Exterieur, Interieur und Rassetyp statt Turnierdisziplinen.';
+    return '';
+  }
+
   // --- 🏆 Schauen -----------------------------------------------------
   views.schauen = function () {
     const s = Game.state;
@@ -1165,14 +1192,16 @@ const UI = (function () {
 
       const reqTxt = [
         show.type === 'sport' ? 'Mindest-' + show.discipline + ' ' + show.minSkill
-          : show.type === 'koerung' ? 'Mindest-Exterieur ' + show.minConf + ', mit Zuchtbucheintrag'
+          : show.type === 'koerung' ? 'nur Hengste, Mindest-Exterieur ' + show.minConf + ', mit Zuchtbucheintrag'
+          : show.type === 'praemierung' ? 'nur Stuten, Mindest-Exterieur ' + show.minConf + ', mit Zuchtbucheintrag'
           : show.type === 'fohlen' ? 'nur 0–3 Jahre'
           : 'Mindest-Exterieur ' + show.minConf,
         show.youngster ? 'nur 3–7 J.' : null,
         'Gesundheit ≥ ' + show.minHealth,
       ].filter(Boolean).join(' · ');
       const typeLabel = show.type === 'sport' ? show.discipline
-        : show.type === 'koerung' ? 'Körung / Prämierung'
+        : show.type === 'koerung' ? 'Körung (Hengste)'
+        : show.type === 'praemierung' ? 'Prämierung (Stuten)'
         : show.type === 'fohlen' ? 'Fohlenschau'
         : 'Zuchtschau';
 
@@ -1186,10 +1215,12 @@ const UI = (function () {
           '<div class="table-wrap"><table class="small"><thead><tr><th>Pl.</th><th>Pferd</th><th>Wertung</th><th class="right">Preisgeld</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
       }
 
+      const explainer = showTypeExplainer(show.type);
       return `<div class="card stack">
         <div class="row between"><b>${esc(show.name)}</b><span class="tag">Klasse ${show.level}</span></div>
         <div class="small muted">${esc(typeLabel)} ·
           Nenngeld ${fmt(show.entryFee)} · Reise ${fmt(show.travelCost)} · Preisgeld ${fmt(show.prizePool)}</div>
+        ${explainer ? '<div class="small muted">' + esc(explainer) + '</div>' : ''}
         <div class="small">Zulassung: ${esc(reqTxt)}</div>
         ${entered.length ? '<div class="small">Genannt: ' + entered.map((h) =>
           esc(h.name) + ' <button class="small secondary" data-action="withdraw" data-show="' + show.id + '" data-id="' + h.id + '">×</button>').join(' ') + '</div>' : ''}
@@ -1287,9 +1318,10 @@ const UI = (function () {
     return `
       <div class="card">
         <h3>Schaukalender</h3>
-        <p class="small muted">Je Disziplin eigene Prüfungsklassen mit Mindestanforderung. Dazu <b>Zuchtschauen</b> und
-        <b>Körungen/Prämierungen</b> (Zuchtzulassung + Ia/Ib/Staatsprämie + Siegertitel). Genannte Pferde starten beim „Woche weiter";
-        Kosten: Nenngeld, Reise, Energie. Platzierungen bringen Preisgeld, Prestige und Saisonpunkte.</p>
+        <p class="small muted">Je Disziplin eigene Prüfungsklassen mit Mindestanforderung. Dazu <b>Zuchtschauen</b> (offen für beide
+        Geschlechter), <b>Körung</b> (nur Hengste — Zuchtzulassung) und <b>Prämierung/Stutenschau</b> (nur Stuten —
+        Zuchtbucheintragung + Ia/Ib/Staatsprämie), außerdem die <b>Fohlenschau</b> für 0–3-Jährige. Genannte Pferde starten beim
+        „Woche weiter"; Kosten: Nenngeld, Reise. Platzierungen bringen Preisgeld, Prestige und Saisonpunkte.</p>
       </div>
       <div class="grid cols-2" style="margin-top:1rem">${cards}</div>
       ${recent ? '<div class="card" style="margin-top:1rem"><h3>📋 Letzte Ergebnisse</h3>' + recent + '</div>' : ''}

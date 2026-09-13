@@ -1338,6 +1338,13 @@ const Game = (function () {
     h.leistungspruefung = { index: index, gaits: gaits, ride: ride, jump: jump, char: char, week: state.week };
     log('Leistungsprüfung ' + h.name + ' abgeschlossen: Index ' + index + ' (' + (index >= 80 ? 'bestanden' : 'nicht bestanden') +
       ') — GGA ' + gaits + ', Rittigkeit ' + ride + ', Springen ' + jump + ', Charakter ' + char + '.', index >= 80 ? 'good' : 'warn');
+    // Ein "vorläufig gekörter" Hengst rückt mit bestandener Leistungsprüfung
+    // automatisch ins Zuchtbuch I auf - keine erneute Körung nötig, genau
+    // wie im echten Zuchtwesen (Hengstleistungsprüfung nach der Körung).
+    if (index >= 80 && h.sex === 'hengst' && h.zuchtzulassung === 'vorläufig gekört (Zuchtbuch II)') {
+      h.zuchtzulassung = 'gekört, Zuchtbuch I';
+      log('📜 ' + h.name + ' rückt mit bestandener Leistungsprüfung ins Zuchtbuch I auf (gekört, Zuchtbuch I).', 'good');
+    }
   }
 
   // --- Der Wochen-Tick ---------------------------------------------------
