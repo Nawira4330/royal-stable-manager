@@ -234,24 +234,32 @@ const Economy = (function () {
   // Anzeige-/Erklärtext je Bedingungs-Schlüssel (für die "nächster Rang"-Liste).
   const TIER_REQ_LABELS = {
     prestige: 'Prestige', horses: 'Pferde im Stall', wins: 'Turniersiege gesamt (alle Schau-Arten, Lebenszeit)',
-    foalsBred: 'gezüchtete Fohlen gesamt (Lebenszeit)', zuchtbuch: 'Pferde je mind. Zuchtbuch II erreicht (Lebenszeit)',
-    zuchtbuchI: 'Pferde je Zuchtbuch I erreicht (Lebenszeit)', staatspraemie: 'Pferde je Staatsprämie erreicht (Lebenszeit)',
+    foalsBred: 'gezüchtete Fohlen gesamt (Lebenszeit)',
+    zuchtbuch: 'Pferde mit mind. Zuchtbuch II (selbst erreicht, für immer, oder aktuell im Stall/gekauft)',
+    zuchtbuchI: 'Pferde mit Zuchtbuch I (selbst erreicht, für immer, oder aktuell im Stall/gekauft)',
+    staatspraemie: 'Pferde mit Staatsprämie (selbst erreicht, für immer, oder aktuell im Stall/gekauft)',
     championTitle: 'Jahres-Championat als Gesamtsieger gewonnen',
   };
   function tierMetrics(state) {
     const horses = state.horses || [];
     const stats = state.stats || {};
-    // Zuchtbuch/Staatsprämie zählen als Lebenszeit-Erfolge (state.stats.*),
-    // nicht am aktuellen Bestand - sonst könnte ein Rang sinken, nur weil
-    // ein altes Zuchtbuch-Pferd stirbt oder verkauft wird.
+    // Zuchtbuch/Staatsprämie zählen als Maximum aus zwei Quellen:
+    // (a) Lebenszeit-Erfolge (state.stats.*) - bleiben erhalten, auch wenn
+    //     das Pferd später stirbt oder verkauft wird, und
+    // (b) aktueller Bestand - so zählen auch gekaufte Staatsprämien-/
+    //     Zuchtbuch-Pferde (Markt/Auktion/Deckstation können damit erzeugt
+    //     werden), nicht nur selbst errittene.
+    const liveZuchtbuch = horses.filter((h) => approvalRank(h.zuchtzulassung) >= 2).length;
+    const liveZuchtbuchI = horses.filter((h) => approvalRank(h.zuchtzulassung) >= 3).length;
+    const liveStaatspraemie = horses.filter((h) => h.praemie === 'Staatsprämie').length;
     return {
       prestige: Math.round(state.prestige),
       horses: horses.length,
       wins: stats.showWins || 0,
       foalsBred: stats.foalsBred || 0,
-      zuchtbuch: stats.zuchtbuchCount || 0,
-      zuchtbuchI: stats.zuchtbuchICount || 0,
-      staatspraemie: stats.staatspraemieCount || 0,
+      zuchtbuch: Math.max(liveZuchtbuch, stats.zuchtbuchCount || 0),
+      zuchtbuchI: Math.max(liveZuchtbuchI, stats.zuchtbuchICount || 0),
+      staatspraemie: Math.max(liveStaatspraemie, stats.staatspraemieCount || 0),
       championTitle: (state.championHistory || []).some((c) => c.overall === state.studName) ? 1 : 0,
     };
   }
